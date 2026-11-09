@@ -263,8 +263,13 @@ func _physics_process(delta: float) -> void:
     target_angles["bucket"] = -0.24 - 0.12 * lift_frac
     for id in ["boom", "stick", "bucket"]:
         _drive_joint(id, delta)
-    _control_slew(1.20 * smoothstep(13.0, 19.0, elapsed))
-    if elapsed >= 19.0 and elapsed < 26.0:
+    # The automated field-trial operator must not attempt to drive away
+    # towing a grounded load that failed to lift. This interlock applies to
+    # the SCRIPTED TEST only; it is not a real-machine load limiter.
+    var carry_authorised := peak_load_lift_m > 0.50
+    var requested_slew := 1.20 * smoothstep(13.0, 19.0, elapsed)
+    _control_slew(requested_slew if carry_authorised else 0.0)
+    if elapsed >= 19.0 and elapsed < 26.0 and carry_authorised:
         if case_name == "lift_pivot_500":
             _drive_tracks(-0.55, 0.55)
         else:
@@ -309,6 +314,8 @@ func _physics_process(delta: float) -> void:
     labels.text = "LANDWORKS | FREE-CHASSIS EXCAVATOR FIELD TEST\n"
     labels.text += "%s | %s | %.0f kg load | lift %+.2f m | slew %.1f°\n" % [case_name, phase, initial_payload_mass, height_change, slew_deg]
     labels.text += "Base tilt %.1f° | travel %.2f m | track contacts %d/4\n" % [tip_angle, max_travel_m, ground_contact_count]
+    if not carry_authorised and elapsed > 10.0:
+        labels.text += "TEST OPERATOR: LIFT FAILED — NO SLEW/TRAVEL COMMAND\n"
     labels.text += "Boom motor torque cap: %.0f kNm (assumed); real hydraulic circuits NOT simulated." % (BOOM_TORQUE_LIMIT_NM / 1000.0)
     if elapsed >= TEST_END_S:
         _finish()

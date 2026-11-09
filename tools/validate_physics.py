@@ -47,26 +47,36 @@ def read_summary(path: Path, typ: str) -> dict[str, float]:
 def check_case(case: str, r: dict[str, float]) -> list[str]:
     problems: list[str] = []
     if case.startswith("lift_"):
-        if r["max_slew_deg"] < 45 or r["max_slew_deg"] > 105:
-            problems.append("slew outside 45-105 degrees")
-        if case == "lift_pivot_500":
-            if r["base_planar_displacement_m"] > 0.9:
-                problems.append("neutral turn drifted more than 0.9 m")
-        elif r["base_travel_m"] < 1 or r["base_travel_m"] > 15:
-            problems.append("crawler straight distance outside 1-15 m")
         if r["max_chassis_tilt_deg"] > 18 or r["tipping_detected"] > 0:
             problems.append("chassis instability")
         if r["hold_drift_m"] > 0.20:
             problems.append("load drifts during HOLD phase")
-        if case == "lift_pivot_500" and r["max_base_yaw_deg"] < 35:
-            problems.append("opposed crawler commands did not produce pivot turn")
-        if case != "lift_pivot_500" and r["max_base_yaw_deg"] > 35:
-            problems.append("uncommanded crawler yaw greater than 35 degrees")
         if case == "lift_1000":
+            # At the CURRENT long-reach prototype geometry 1000 kg stalls.
+            # The test driver must not slew or drive with a grounded load.
+            # This is NOT a Kubota rated-load claim.
             if r["peak_lift_m"] > 0.25:
-                problems.append("nominally overloaded 1000 kg case unexpectedly lifted")
-        elif not (0.8 <= r["peak_lift_m"] <= 4.5):
-            problems.append("250/500 kg load not lifted to plausible test height")
+                problems.append("1000 kg reference-stall case unexpectedly lifted")
+            if r["max_slew_deg"] > 15:
+                problems.append("test operator slewed a failed lift")
+            if r["base_planar_displacement_m"] > 0.5:
+                problems.append("test operator travelled with a grounded load")
+            if r["max_base_yaw_deg"] > 15:
+                problems.append("grounded-load chassis rotated excessively")
+        else:
+            if not (0.8 <= r["peak_lift_m"] <= 4.5):
+                problems.append("250/500 kg load not lifted to plausible test height")
+            if r["max_slew_deg"] < 45 or r["max_slew_deg"] > 105:
+                problems.append("slew outside 45-105 degrees")
+            if case == "lift_pivot_500":
+                if r["base_planar_displacement_m"] > 0.9:
+                    problems.append("neutral turn drifted more than 0.9 m")
+                if r["max_base_yaw_deg"] < 35:
+                    problems.append("opposed crawler commands did not produce pivot turn")
+            elif r["base_travel_m"] < 1 or r["base_travel_m"] > 15:
+                problems.append("crawler straight distance outside 1-15 m")
+            if case != "lift_pivot_500" and r["max_base_yaw_deg"] > 35:
+                problems.append("uncommanded crawler yaw greater than 35 degrees")
     else:
         if not 2 <= r["peak_kmh"] <= 17:
             problems.append("tractor speed outside 2-17 km/h")

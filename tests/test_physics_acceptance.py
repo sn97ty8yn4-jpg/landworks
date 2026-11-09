@@ -23,8 +23,20 @@ class PhysicsAcceptanceTests(unittest.TestCase):
         r = {"peak_lift_m": 0.0, "hold_drift_m": 0.0,
              "base_travel_m": 2.5, "max_slew_deg": 69,
              "max_chassis_tilt_deg": 0, "tipping_detected": 0,
-             "max_base_yaw_deg": 1, "base_planar_displacement_m": 3}
+             "max_base_yaw_deg": 0, "base_planar_displacement_m": 0}
         self.assertEqual(gate.check_case("lift_1000", r), [])
+
+    def test_grounded_overload_must_not_slew_or_travel(self):
+        r = {"peak_lift_m": 0.0, "hold_drift_m": 0.01,
+             "base_travel_m": 0.0, "base_planar_displacement_m": 0.0,
+             "max_slew_deg": 0.0, "max_base_yaw_deg": 0.0,
+             "max_chassis_tilt_deg": 0.0, "tipping_detected": 0}
+        self.assertEqual(gate.check_case("lift_1000", r), [])
+        r["base_planar_displacement_m"] = 1.0
+        r["max_slew_deg"] = 69
+        problems = gate.check_case("lift_1000", r)
+        self.assertTrue(any("travelled" in p for p in problems))
+        self.assertTrue(any("slewed" in p for p in problems))
 
     def test_invalid_slew_and_crawler_not_green(self):
         r = {"peak_lift_m": 1.7, "hold_drift_m": 0.01,
