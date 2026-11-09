@@ -3,7 +3,13 @@
 # travel-force proxy. All outcomes come from solver state, not visual animation.
 extends "res://landworks/scripts/physical_excavator_lab.gd"
 
-const LOADS := {"lift_250": 250.0, "lift_500": 500.0, "lift_1000": 1000.0}
+const LOADS := {"lift_250": 250.0, "lift_500": 500.0, "lift_1000": 1000.0,
+    "lift_pivot_500": 500.0}
+# Track traction is a contact-force proxy, NOT individual rubber belt dynamics.
+# 8170 kg includes chassis, carriage, boom, arm and bucket, excluding payload.
+const APPROX_DRY_GRASS_TRACK_MU := 0.56
+const TRACK_MACHINE_MASS_KG := 8170.0
+const TRACK_SPEED_FEEDBACK_N_PER_MPS := 24000.0
 const BOOM_TORQUE_LIMIT_NM := 75000.0  # engineering starting assumption, NOT OEM value
 const STICK_TORQUE_LIMIT_NM := 45000.0
 const BUCKET_TORQUE_LIMIT_NM := 20000.0
@@ -31,6 +37,7 @@ var tip_detected := false
 var completed := false
 var sample_at_10 := false
 var initial_payload_mass := 500.0
+var max_base_yaw_deg := 0.0
 
 func _ready() -> void:
     for arg in OS.get_cmdline_user_args():
@@ -57,7 +64,7 @@ func _ready() -> void:
         return
     data_file.store_csv_line(PackedStringArray(["time_s", "case", "phase", "payload_kg",
         "payload_y_m", "load_lift_m", "base_z_m", "base_speed_kmh", "chassis_tilt_deg",
-        "slew_deg", "boom_deg", "stick_deg", "bucket_deg", "ground_contacts"]))
+        "slew_deg", "boom_deg", "stick_deg", "bucket_deg", "ground_contacts", "base_yaw_deg"]))
 
 func _out(filename: String) -> String:
     return "user://" + filename if output_dir == "" else output_dir.path_join(filename)
@@ -171,11 +178,13 @@ func _control_slew(target_rad: float) -> void:
         -clampf(2.0 * error - 0.65 * rel_ang_vel, -0.45, 0.45))
 
 func _drive_tracks(target_left: float, target_right: float) -> void:
-    # Four physical ground-contact queries. Traction is limited and applied at
-    # the appropriate side of the lower-carriage. Track links are not modelled.
+    # Physical hull-on-ground contact comes from Jolt. Each track then applies
+    # a force at its own lateral lever arm, with an estimated Coulomb traction
+    # budget based on total normal load and the number of grounded contacts.
+    # The *local track contact velocity* includes chassis yaw, so opposite
+    # commands can converge to a physical neutral turn.
     var basis := undercarriage.global_transform.basis
     var forward: Vector3 = -basis.z.normalized()
-    var current := undercarriage.linear_velocity.dot(forward)
     ground_contact_count = 0
     for side in [-1.0, 1.0]:
         var contacts := 0
@@ -190,11 +199,16 @@ func _drive_tracks(target_left: float, target_right: float) -> void:
                 ground_contact_count += 1
         if contacts == 0:
             continue
+        var at_body := basis * Vector3(side * 0.86, 0.20, 0.0)
+        var point_velocity := undercarriage.linear_velocity + undercarriage.angular_velocity.cross(at_body)
+        var contact_forward_speed := point_velocity.dot(forward)
         var requested: float = target_left if side < 0.0 else target_right
-        var traction_cap := 15000.0 * float(contacts) / 2.0
-        var force := clampf((requested - current) * 24000.0, -traction_cap, traction_cap)
-        # Apply at ground-contact height. Yaw emerges from different left/right forces.
-        undercarriage.apply_force(forward * force, basis * Vector3(side * 0.86, 0.20, 0.0))
+        var normal_load_n := (TRACK_MACHINE_MASS_KG + initial_payload_mass) * 9.81 * 0.5
+        var contact_fraction := float(contacts) / 2.0
+        var traction_cap := minf(20000.0, APPROX_DRY_GRASS_TRACK_MU * normal_load_n * contact_fraction)
+        var force := clampf((requested - contact_forward_speed) * TRACK_SPEED_FEEDBACK_N_PER_MPS,
+            -traction_cap, traction_cap)
+        undercarriage.apply_force(forward * force, at_body)
 
 func _test_phase() -> String:
     if elapsed < 2.0:
@@ -223,7 +237,10 @@ func _physics_process(delta: float) -> void:
         _drive_joint(id, delta)
     _control_slew(1.20 * smoothstep(13.0, 19.0, elapsed))
     if elapsed >= 19.0 and elapsed < 26.0:
-        _drive_tracks(0.66, 0.66)
+        if case_name == "lift_pivot_500":
+            _drive_tracks(-0.55, 0.55)
+        else:
+            _drive_tracks(0.66, 0.66)
     else:
         _drive_tracks(0.0, 0.0)
     var up: Vector3 = undercarriage.global_transform.basis.y.normalized()
@@ -236,6 +253,9 @@ func _physics_process(delta: float) -> void:
     max_travel_m = maxf(max_travel_m, absf(undercarriage.global_position.z - start_base_z))
     var slew_deg := rad_to_deg(_relative_slew_rad())
     max_slew_deg = maxf(max_slew_deg, absf(slew_deg))
+    var under_basis := undercarriage.global_transform.basis
+    var base_yaw_deg := rad_to_deg(atan2(under_basis.z.x, under_basis.z.z))
+    max_base_yaw_deg = maxf(max_base_yaw_deg, absf(base_yaw_deg))
     if elapsed >= 11.0 and not sample_at_10:
         hold_height = test_mass.global_position.y
         sample_at_10 = true
@@ -252,7 +272,8 @@ func _physics_process(delta: float) -> void:
             "%.3f" % tip_angle, "%.3f" % slew_deg,
             "%.3f" % rad_to_deg(_joint_angle("boom")),
             "%.3f" % rad_to_deg(_joint_angle("stick")),
-            "%.3f" % rad_to_deg(_joint_angle("bucket")), str(ground_contact_count)
+            "%.3f" % rad_to_deg(_joint_angle("bucket")), str(ground_contact_count),
+            "%.3f" % base_yaw_deg
         ]))
     labels.text = "LANDWORKS | FREE-CHASSIS EXCAVATOR FIELD TEST\n"
     labels.text += "%s | %s | %.0f kg load | lift %+.2f m | slew %.1f°\n" % [case_name, phase, initial_payload_mass, height_change, slew_deg]
@@ -268,11 +289,12 @@ func _finish() -> void:
     var f := FileAccess.open(path, FileAccess.WRITE)
     if f != null:
         f.store_csv_line(PackedStringArray(["scenario", "payload_kg", "peak_lift_m", "peak_drop_m", "hold_drift_m",
-            "base_travel_m", "max_slew_deg", "max_chassis_tilt_deg", "tipping_detected"]))
+            "base_travel_m", "max_slew_deg", "max_chassis_tilt_deg", "tipping_detected",
+            "max_base_yaw_deg"]))
         f.store_csv_line(PackedStringArray([case_name, "%.0f" % initial_payload_mass,
             "%.3f" % peak_load_lift_m, "%.3f" % peak_load_drop_m, "%.3f" % hold_drift_m,
             "%.3f" % max_travel_m, "%.3f" % max_slew_deg, "%.3f" % peak_tilt_deg,
-            str(int(tip_detected))]))
+            str(int(tip_detected)), "%.3f" % max_base_yaw_deg]))
         f.close()
     print("LANDWORKS_EXCAVATOR_TEST_COMPLETE ", case_name, " ", path)
     if batch:

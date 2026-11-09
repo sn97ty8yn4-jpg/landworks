@@ -59,7 +59,7 @@ class V06WorkTests(unittest.TestCase):
             self.assertFalse((Path(d)/'tractor_flat_400_summary.csv').exists())
             with self.assertRaises(RuntimeError):
                 w.validate_sample(Path(d)/'no_file.csv','flat_400')
-        self.assertEqual(len(w.CASE_SCENES),7)
+        self.assertEqual(len(w.CASE_SCENES),8)
 
     def test_mathematical_surrogates_are_separate_outputs(self):
         s=(ROOT/'tools/surrogate_dynamics.py').read_text()

@@ -78,7 +78,7 @@ jobs:
           from pathlib import Path
           import csv
           base = Path("field_test_results")
-          cases = ["flat_empty","flat_400","hill_400","hill_800","lift_250","lift_500","lift_1000"]
+          cases = ["flat_empty","flat_400","hill_400","hill_800","lift_250","lift_500","lift_1000","lift_pivot_500"]
           for case in cases:
               typ = "excavator" if case.startswith("lift_") else "tractor"
               sample = base / f"{typ}_{case}_samples.csv"

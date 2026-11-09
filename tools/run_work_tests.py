@@ -21,6 +21,7 @@ CASE_SCENES={
     'lift_250':'res://landworks/scenes/excavator_work_lab.tscn',
     'lift_500':'res://landworks/scenes/excavator_work_lab.tscn',
     'lift_1000':'res://landworks/scenes/excavator_work_lab.tscn',
+    'lift_pivot_500':'res://landworks/scenes/excavator_work_lab.tscn',
 }
 
 

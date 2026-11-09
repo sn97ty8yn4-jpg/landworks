@@ -13,12 +13,12 @@ from pathlib import Path
 import sys
 
 TRACTOR = ("flat_empty", "flat_400", "hill_400", "hill_800")
-EXCAVATOR = ("lift_250", "lift_500", "lift_1000")
+EXCAVATOR = ("lift_250", "lift_500", "lift_1000", "lift_pivot_500")
 SUMMARY_FIELDS = {
     "tractor": ("peak_kmh", "forward_distance_m", "brake_displacement_m",
                 "max_articulation_deg", "max_tilt_deg", "max_hitch_error_m", "tipped"),
     "excavator": ("peak_lift_m", "hold_drift_m", "base_travel_m", "max_slew_deg",
-                  "max_chassis_tilt_deg", "tipping_detected"),
+                  "max_chassis_tilt_deg", "tipping_detected", "max_base_yaw_deg"),
 }
 FAILURES = "FAIL"
 
@@ -54,6 +54,8 @@ def check_case(case: str, r: dict[str, float]) -> list[str]:
             problems.append("chassis instability")
         if r["hold_drift_m"] > 0.20:
             problems.append("load drifts during HOLD phase")
+        if case == "lift_pivot_500" and r["max_base_yaw_deg"] < 35:
+            problems.append("opposed crawler commands did not produce pivot turn")
         if case == "lift_1000":
             if r["peak_lift_m"] > 0.25:
                 problems.append("nominally overloaded 1000 kg case unexpectedly lifted")
@@ -97,7 +99,7 @@ def main() -> int:
         print(f"{case:13} {'FAIL' if failures else 'PASS':5} " + "; ".join(failures))
     if any(problems for _, problems in cases):
         return 1
-    print("All 7 measured behaviour gates passed (provisional thresholds; not OEM validation)")
+    print("All 8 measured behaviour gates passed (provisional thresholds; not OEM validation)")
     return 0
 
 
