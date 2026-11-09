@@ -1,35 +1,39 @@
-# Landworks — Godot machinery simulator
+# Landworks v0.6 — working-load scenarios
 
-Open-source machinery simulator prototype targeting **Godot 4.6.1 Standard (GDScript)**.
+New scenes: `landworks/scenes/tractor_work_lab.tscn` (tractor + dynamic single-axle trailer, 0–800 kg payloads, 0–6° ground) and `landworks/scenes/excavator_work_lab.tscn` (unfrozen 8.17 t KX080 proxy, rigid body boom and load, physical slewing upper assembly, ground-contact tracks, 250–1000 kg payloads). See `docs/V06_FIELD_TRIALS.md` for cases and limitations. `RUN_FIELD_TESTS_WINDOWS.bat` runs all seven cases using your Godot 4.6 executable and validates genuine CSV outputs; offline Python calculations are explicitly separate. **No Godot runtime test was possible in the authoring environment.**
 
-**Project status:** GitHub development environment is being configured. The v0.6 source package must be imported into this repository before real physics tests can run. Do not confuse mathematical/offline screening with measurements from a Godot process.
+---
 
-## Development scope
+# Landworks v0.5 — 3-engine tractor comparison + force-based excavator
 
-- Kubota B7100 HST compact tractor: turf tyres, hydrostatic drive, towing and loaded hill work.
-- Kubota KX080-3 excavator: crawler movement, powered boom/stick/bucket constraints, real load handling and chassis stability.
-- Trial physics integrations: Godot Jolt, KV Vehicle, Godot Easy Vehicle Physics.
-- Deformable terrain and precise machines are later milestones.
+**New standalone Godot 4.6 scenes, extending the v0.4 project without removing it:**
 
-## Setup
+1. **`landworks/scenes/physics_comparison_lab.tscn`** — automatic side-by-side physics test of the baseline B7100 proxy vs **KV Vehicle** vs **Godot Easy Vehicle Physics**, with separate implementations and actual Godot-derived telemetry CSV output. Run `SETUP_PHYSICS_WINDOWS.bat` first (Python 3 + internet). If the add-ons are missing, the UI reports them as unavailable — it does NOT fabricate data.
+2. **`landworks/scenes/physical_excavator_lab.tscn`** — actual gravity-affected rigid-body boom/stick/bucket, torque-limited `HingeJoint3D` motors and 250/500 kg suspended physics payload attached with a `PinJoint3D`. Automatic or manual hydraulic-*control proxy*; actual hydraulic circuits are NOT simulated.
+3. Original **`landworks/scenes/test_yard.tscn`** remains intact (visual-only v0.4 excavator, baseline tractor).
 
-1. Obtain **Landworks Godot v0.6 Working Load Field Trials** from the ChatGPT project discussion.
-2. Extract the ZIP and copy **the contents of the inner `landworks_v0_6` folder** into this repository's root. The root must contain `project.godot`, `landworks/`, `tools/`, `tests/`, `docs/`. Preserve the existing `.github/` folder.
-3. Commit and push the changes.
-4. Open **Actions** and inspect **Godot CI / Headless field trials**. The runner installs Godot and tests the project independently of a local PC.
+**Detailed test instructions, code audit, licence references and acceptance thresholds: `docs/V05_EVALUATION.md`.**
 
-For local development: open `project.godot` in **Godot 4.6.1 Standard**, enable Jolt and run the tractor or excavator lab scenes. To run the seven physics scenarios locally:
+## First run
 
-```bash
-python tools/run_work_tests.py --godot godot --case all
+1. Install Godot 4.6 and Python 3 on Windows; unzip the entire folder.
+2. Double-click `SETUP_PHYSICS_WINDOWS.bat` and restart Godot after it downloads the pinned MIT packages. The project defaults to **Jolt Physics at 120 Hz**. `RESTORE_BASELINE_PHYSICS_WINDOWS.bat` can restore GodotPhysics3D at 60 Hz for A/B testing.
+3. Open `project.godot` in Godot, then open each `.tscn` above and press **F6** (Run Current Scene).
+4. From the main yard, D-pad left/F5 opens the tractor comparison, D-pad right/F4 opens the physical lift lab; Circle/F4 returns to the yard. Observe the benchmark and load test. The benchmark writes results into `user://landworks_comparison_samples.csv` and `user://landworks_comparison_summary.csv`. The project shows the save location in its Output panel. To turn the recorded CSV into a comparison report, run `ANALYSE_BENCH_WINDOWS.bat` and supply the CSV path; the script refuses missing or invalid measurements.
+
+## Limitations
+
+The numerical handling comparison has **not yet been run**: the authoring environment has no Godot executable or installed vendor packages and cannot fetch binaries. The scripts implement the comparisons and physical joints but require runtime testing on the target PC. The excavator's lower chassis is deliberately anchored for an isolated load-lifting test, and the HingeJoint motors are not a calibrated hydraulic-pressure system. No exact Kubota donor mesh is bundled. The v0.2–0.4 GLB downloading/rigging pipeline and documentation are preserved.
+
+## Existing assets and rigging
+
+Use `DOWNLOAD_MODELS_WINDOWS.bat`, `SCAN_MODELS_WINDOWS.bat`, `INSPECT_IN_BLENDER_WINDOWS.bat` and `EXPORT_RIGS_WINDOWS.bat` for the previously identified CC0 tractor and excavator visual donors. Their actual models are not included because original binary downloads could not be verified. See `docs/RIGGING_GUIDE.md` and `docs/ASSET_SOURCES.md`.
+
+## Offline source checks
+
+```cmd
+python -m unittest discover -s tests -p "test_*.py" -v
+python tests/check_project.py
 ```
 
-The CI workflow separates **Python source/unit checks**, **Godot editor import/parsing**, and **actual headless physics telemetry**. The latter needs successful simulation, no parse errors and complete CSV samples. A numerical result is not regarded as verified until a Godot run produces it.
-
-## Source/assets licensing
-
-Upstream dependencies and CC0 model listings must be reviewed before bundling assets. The existing v0.6 project contains licence notes; commercial Kubota brand/model imagery is not automatically under a reusable licence.
-
-## Relationship to Tinybox
-
-Build and validate the machinery in this standalone Godot project first. Later, integrate the machines into a separate Tinybox fork with careful consideration of its AGPLv3 licence.
+These are structural checks, not substitute simulations. `COPYING-NOTES.md` covers code and model licensing.
