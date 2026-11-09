@@ -31,7 +31,7 @@ func _run(soil: Node3D) -> void:
         return
     var dropped := 0.0
     for n in range(9):
-        var spill := soil.release_soil(Vector3(-1.1, 2.1, -0.6),
+        var spill: float = soil.release_soil(Vector3(-1.1, 2.1, -0.6),
             Vector3(0.45, 0.0, 0.2), minf(0.035, held), "gravel")
         dropped += spill
         held -= spill
@@ -44,9 +44,9 @@ func _run(soil: Node3D) -> void:
         await physics_frame
     var final_ground: float = soil.ground_volume_m3()
     var mobile_volume: float = soil.mobile_volume_m3()
-    var balance := final_ground + mobile_volume + held + soil.offsite_m3 - start_volume
+    var balance: float = final_ground + mobile_volume + held + float(soil.offsite_m3) - start_volume
     var tolerance := 0.003
-    var ok := absf(balance) <= tolerance and soil.deposited_total_m3 > 0.015
+    var ok: bool = absf(balance) <= tolerance and float(soil.deposited_total_m3) > 0.015
     ok = ok and soil.cut_events > 0 and soil.spill_events > 0
     ok = ok and count_at_peak > soil.mobile.size()
     ok = ok and soil.peak_particles <= soil.MAX_PARTICLES
