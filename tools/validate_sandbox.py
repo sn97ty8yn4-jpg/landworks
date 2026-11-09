@@ -39,6 +39,8 @@ def validate(root: Path) -> list[str]:
         errors.append("excavator crawler did not travel")
     if values["boom_change_deg"] < 4.0:
         errors.append("physics boom did not move")
+    if not 0.40 <= values["crate_travel_m"] <= 12.0:
+        errors.append("the live 1500 kg crate was not physically pushed 0.4-12 m")
     if values["max_hitch_error_m"] > 0.3:
         errors.append("trailer hitch detached or stretched")
     if values["max_chassis_tilt_deg"] > 20:

@@ -64,14 +64,16 @@ func _physics_process(delta: float) -> void:
     var slew_cmd := 0.0
     if scripted_test:
         test_clock += delta
-        # Reproducible engineering smoke inputs: begin with controlled lift,
-        # then propel the tracks into the grounded crate. No transform edits.
-        if test_clock > 2.0 and test_clock < 7.0:
-            boom_cmd = 0.45
-        if test_clock > 8.0 and test_clock < 16.0:
+        # Lift/return to prove real boom actuation, then push with the toe
+        # at its original contact height. The previous smoke program left
+        # the bucket raised and only moved the grounded crate by 17 mm.
+        # These commands move motors, never rigid-body transforms.
+        if test_clock > 2.0 and test_clock < 5.0:
+            boom_cmd = 0.23
+        elif test_clock >= 5.0 and test_clock < 10.0:
+            boom_cmd = -0.138
+        if test_clock >= 12.0 and test_clock < 20.0:
             travel = 0.68
-        if test_clock > 11.0 and test_clock < 15.0:
-            slew_cmd = 0.08
     elif operated:
         var joy := INPUTS.joy_id()
         travel = clampf(

@@ -64,3 +64,13 @@ movement velocity. An overloaded object may remain on the ground while the
 excavator can still drag it or push against it. The prototype capture range
 is 1.6 m from hook to object centre. This is **not** a calibrated quick hitch,
 a flexible chain, an attachment safety device or a rated lift procedure.
+
+
+## Integrated working-contact regression
+
+The 21-second sandbox smoke trial first cycles the physical boom up and
+down, then drives the tracks into the **free 1,500 kg crate** with the bucket
+at contact height. Its telemetry must show at least 0.4 m of crate motion
+without direct transform changes. The first sandbox experiment moved
+the tractor and crawler but only nudged the crate 0.017 m because the
+bucket was still raised. That defect motivated the new regression gate.
