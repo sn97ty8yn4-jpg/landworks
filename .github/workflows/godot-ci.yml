@@ -77,6 +77,11 @@ jobs:
           set -o pipefail
           timeout 90s godot --headless --path . --quit-after 120 2>&1 | tee ci-logs/godot-yard.log
 
+      - name: Validate earthworks geometry, particles and mass conservation
+        shell: bash
+        run: |
+          timeout 70s godot --headless --path . --script res://landworks/scripts/earthworks_smoke.gd
+
       - name: Run integrated physics sandbox smoke test
         shell: bash
         run: |
