@@ -193,7 +193,10 @@ func _drive_joint(id: String, _delta: float) -> void:
     # PID-style angular motor: physics joint supplies torque, not animation transforms.
     var desired_velocity := clampf(3.4 * position_error - 0.65 * relative_velocity,
         -float(h["max_speed"]), float(h["max_speed"]))
-    joint.set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY, desired_velocity)
+    # Motor velocity around the joint's mapped local Z has the opposite sign
+    # to our positive local-X joint angle. The previous polarity drove all
+    # three links away from their targets under load (confirmed in CI telemetry).
+    joint.set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY, -desired_velocity)
 
 func _physics_process(delta: float) -> void:
     elapsed += delta
