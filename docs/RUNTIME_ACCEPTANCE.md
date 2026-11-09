@@ -45,3 +45,17 @@ horizontal object displacement; the cylinder must physically rotate at least
 45 degrees. The provisional friction values are not calibrated for soil rutting
 or ground disturbance. An object that fails to lift is still allowed to move
 horizontally when sufficient crawler force and ground contact are available.
+
+## Playable demonstration shortcuts
+
+Open the main yard and press F9 (drag the 1000 kg hooked object),
+F10 (physically push the 1500 kg free block), or F11 (push/roll
+the 1000 kg free drum). These launch automatic work demonstrations
+using the same Jolt rigid bodies as CI. F8 continues to launch
+the default 500 kg live-lift scenario. The demo scripts do not
+provide fully interactive digging controls yet.
+
+The track-normal estimate now excludes grounded loads rather than
+granting the excavator extra driving grip simply because it is
+pushing or dragging a heavy object. The provisional 8.17 t
+machine-mass value excludes the load itself.

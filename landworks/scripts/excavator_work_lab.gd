@@ -51,6 +51,12 @@ var start_base_xz := Vector2.ZERO
 var max_base_planar_displacement_m := 0.0
 
 func _ready() -> void:
+    # Allow the yard to launch a specific physically simulated work case.
+    # Command-line test cases take precedence for the automated CI runner.
+    if get_tree().has_meta("landworks_work_scenario"):
+        var selected_case := str(get_tree().get_meta("landworks_work_scenario"))
+        if LOADS.has(selected_case):
+            case_name = selected_case
     for arg in OS.get_cmdline_user_args():
         if arg.begins_with("--scenario="):
             case_name = arg.trim_prefix("--scenario=")
@@ -271,7 +277,13 @@ func _drive_tracks(target_left: float, target_right: float) -> void:
             continue
         # Normal-load estimate is split over the side's two test contacts.
         # No suspension compliance yet: limits are intentionally approximate.
-        var side_normal_n := (TRACK_MACHINE_MASS_KG + initial_payload_mass) * 9.81 * 0.5
+        # A grounded load contributes resistance but not track normal force.
+        # Only a load that has actually cleared the ground transfers its
+        # approximate weight into the crawler contact budget.
+        var carried_mass_kg := 0.0
+        if not (case_name in GROUND_HANDLING_CASES) and peak_load_lift_m > 0.50:
+            carried_mass_kg = initial_payload_mass
+        var side_normal_n := (TRACK_MACHINE_MASS_KG + carried_mass_kg) * 9.81 * 0.5
         var per_patch_mu_n := APPROX_DRY_GRASS_TRACK_MU * side_normal_n / 2.0
         for local in contact_positions:
             var arm: Vector3 = basis * local

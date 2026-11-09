@@ -60,6 +60,20 @@ class PhysicsAcceptanceTests(unittest.TestCase):
         r["base_planar_displacement_m"] = 2.0
         self.assertTrue(gate.check_case("lift_pivot_500", r))
 
+    def test_grounded_material_handling_is_independent_of_lifting(self):
+        # Heavy objects can pass the drag/push/roll test without being lifted.
+        base = {"peak_lift_m": 0.0, "hold_drift_m": 0.0,
+                "base_travel_m": 2.0, "max_slew_deg": 0.0,
+                "max_chassis_tilt_deg": 0.0, "tipping_detected": 0.0,
+                "max_base_yaw_deg": 2.0, "base_planar_displacement_m": 2.0,
+                "object_displacement_m": 1.1, "object_roll_deg": 0.0}
+        for case in ("drag_1000", "push_1500"):
+            self.assertEqual(gate.check_case(case, dict(base)), [])
+        rolled = dict(base, object_roll_deg=120.0)
+        self.assertEqual(gate.check_case("roll_1000", rolled), [])
+        stalled = dict(rolled, object_displacement_m=0.0)
+        self.assertTrue(gate.check_case("roll_1000", stalled))
+
     def test_nonfinite_csv_cannot_pass(self):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "excavator_lift_250_summary.csv"
