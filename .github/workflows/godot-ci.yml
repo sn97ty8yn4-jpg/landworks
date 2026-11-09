@@ -84,6 +84,11 @@ jobs:
           timeout 90s godot --headless --path . res://landworks/scenes/sandbox_world.tscn -- --sandbox-smoke --output-dir="$GITHUB_WORKSPACE/sandbox_test_results"
           python3 tools/validate_sandbox.py --dir "$GITHUB_WORKSPACE/sandbox_test_results"
 
+      - name: Test sandbox hook attachment/release in Godot
+        shell: bash
+        run: |
+          timeout 35s godot --headless --path . --script res://landworks/scripts/sandbox_hook_smoke.gd
+
       - name: Run actual Godot tractor/excavator trials
         shell: bash
         run: |
