@@ -3,8 +3,8 @@
 config_version=5
 
 [application]
-config/name="Landworks Working Load Test Yard"
-run/main_scene="res://landworks/scenes/test_yard.tscn"
+config/name="Landworks Machinery Sandbox"
+run/main_scene="res://landworks/scenes/sandbox_world.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 
 [display]

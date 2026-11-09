@@ -72,6 +72,13 @@ jobs:
           set -o pipefail
           timeout 90s godot --headless --path . --quit-after 120 2>&1 | tee ci-logs/godot-yard.log
 
+      - name: Run integrated physics sandbox smoke test
+        shell: bash
+        run: |
+          mkdir -p sandbox_test_results
+          timeout 90s godot --headless --path . res://landworks/scenes/sandbox_world.tscn -- --sandbox-smoke --output-dir="$GITHUB_WORKSPACE/sandbox_test_results"
+          python3 tools/validate_sandbox.py --dir "$GITHUB_WORKSPACE/sandbox_test_results"
+
       - name: Run actual Godot tractor/excavator trials
         shell: bash
         run: |
@@ -112,5 +119,6 @@ jobs:
           path: |
             ci-logs/
             field_test_results/
+            sandbox_test_results/
           if-no-files-found: warn
           retention-days: 30

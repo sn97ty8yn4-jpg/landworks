@@ -37,6 +37,8 @@ const REST_TRAVEL := 0.20
 const SPRING_RATE := 38000.0
 const DAMPER_RATE := 4600.0
 const GROUND_MU := 0.86
+# Sandbox surface assignment; field trials keep the original 0.86 default.
+var ground_mu_override: float = GROUND_MU
 const MAX_STEER := 0.50
 const DRIVE_FORCE := 4250.0
 const RATED_ENGINE_POWER_W := 11700.0
@@ -153,7 +155,7 @@ func _physics_process(delta: float) -> void:
             var point_velocity := linear_velocity + angular_velocity.cross(relative)
             var vertical_speed := point_velocity.dot(Vector3.UP)
             var normal_force := maxf(0.0, SPRING_RATE * compression - DAMPER_RATE * vertical_speed)
-            var friction_limit := normal_force * GROUND_MU
+            var friction_limit := normal_force * ground_mu_override
             apply_force(Vector3.UP * normal_force, relative)
             var longitudinal_speed := point_velocity.dot(wheel_forward)
             var lateral_speed := point_velocity.dot(wheel_right)

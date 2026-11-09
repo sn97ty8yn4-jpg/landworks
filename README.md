@@ -37,3 +37,11 @@ python tests/check_project.py
 ```
 
 These are structural checks, not substitute simulations. `COPYING-NOTES.md` covers code and model licensing.
+
+
+## First integrated sandbox
+
+Open the project in Godot 4.6.1 and Run (F6 for the sandbox scene).
+The default scene now combines the real powered-joint excavator, HST tractor,
+loaded trailer and movable loads in one collision world. See
+`docs/SANDBOX.md` for controls, scene layout and physical test methodology.

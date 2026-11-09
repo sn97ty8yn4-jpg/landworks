@@ -1,0 +1,73 @@
+# Physically articulated KX080-3-inspired excavator integrated into the farm
+# sandbox. Reuses the same Jolt rigid-body links, contact-track solver, motor
+# constraints and hydraulic allocator as the 13 measured field trials.
+extends "res://landworks/scripts/excavator_work_lab.gd"
+
+const INPUTS = preload("res://landworks/scripts/machine_input.gd")
+
+var operated := false
+var scripted_test := false
+var test_clock := 0.0
+var slew_target_rad := 0.0
+var total_slew_command_deg := 0.0
+
+func _ready() -> void:
+    # Deliberately do NOT call the timed laboratory _ready(). It creates CSV
+    # files and auto-quits; this remains a continuous player-operated machine.
+    # The free 1500 kg crate is a genuine collided, movable test object.
+    case_name = "push_1500"
+    initial_payload_mass = 1500.0
+    surface_profile = SOIL.profile("hardpack")
+    _build_machine()
+    name = "KX080_Physical_Excavator"
+
+func _physics_process(delta: float) -> void:
+    var travel := 0.0
+    var turn := 0.0
+    var boom_cmd := 0.0
+    var stick_cmd := 0.0
+    var bucket_cmd := 0.0
+    var slew_cmd := 0.0
+    if scripted_test:
+        test_clock += delta
+        # Reproducible engineering smoke inputs: begin with controlled lift,
+        # then propel the tracks into the grounded crate. No transform edits.
+        if test_clock > 2.0 and test_clock < 7.0:
+            boom_cmd = 0.45
+        if test_clock > 8.0 and test_clock < 16.0:
+            travel = 0.68
+        if test_clock > 11.0 and test_clock < 15.0:
+            slew_cmd = 0.08
+    elif operated:
+        var joy := INPUTS.joy_id()
+        travel = clampf(
+            float(Input.is_key_pressed(KEY_W)) - float(Input.is_key_pressed(KEY_S)) -
+            INPUTS.stick_y(true), -1.0, 1.0)
+        turn = clampf(
+            float(Input.is_key_pressed(KEY_D)) - float(Input.is_key_pressed(KEY_A)) +
+            INPUTS.stick_x(true), -1.0, 1.0)
+        boom_cmd = clampf(
+            float(Input.is_key_pressed(KEY_I)) - float(Input.is_key_pressed(KEY_K)) +
+            INPUTS.trigger(joy, JOY_AXIS_TRIGGER_RIGHT) -
+            INPUTS.trigger(joy, JOY_AXIS_TRIGGER_LEFT), -1.0, 1.0)
+        stick_cmd = clampf(
+            float(Input.is_key_pressed(KEY_O)) - float(Input.is_key_pressed(KEY_L)) -
+            INPUTS.stick_y(false), -1.0, 1.0)
+        bucket_cmd = clampf(
+            float(Input.is_key_pressed(KEY_P)) -
+            float(Input.is_key_pressed(KEY_SEMICOLON)) +
+            INPUTS.stick_x(false), -1.0, 1.0)
+        slew_cmd = INPUTS.slew()
+    target_angles["boom"] = clampf(float(target_angles["boom"]) + boom_cmd * delta * 0.38,
+        -0.50, 1.05)
+    target_angles["stick"] = clampf(float(target_angles["stick"]) + stick_cmd * delta * 0.47,
+        -1.45, 0.0)
+    target_angles["bucket"] = clampf(float(target_angles["bucket"]) + bucket_cmd * delta * 0.58,
+        -0.95, 0.65)
+    _drive_hydraulics(delta)
+    slew_target_rad = clampf(slew_target_rad + slew_cmd * delta * 0.50, -PI, PI)
+    total_slew_command_deg = rad_to_deg(slew_target_rad)
+    _control_slew(slew_target_rad)
+    var left_speed := clampf((travel - turn) * 0.70, -0.80, 0.80)
+    var right_speed := clampf((travel + turn) * 0.70, -0.80, 0.80)
+    _drive_tracks(left_speed, right_speed)
