@@ -50,7 +50,7 @@ func _exercise(sandbox: Node3D) -> void:
         " released_m3=", sandbox.maximum_dumped_m3,
         " mobile=", earth.mobile.size(),
         " deposited_m3=", earth.deposited_total_m3)
-    var good := sandbox.maximum_dumped_m3 > 0.002
+    var good: bool = sandbox.maximum_dumped_m3 > 0.002
     good = good and absf(sandbox.soil_mass_error_m3) < 0.006
     print("PHYSICAL_DIG ", "PASS" if good else "FAIL")
     quit(0 if good else 2)
