@@ -46,3 +46,17 @@ https://docs.godotengine.org/en/4.6/classes/class_heightmapshape3d.html
 The multiscale hybrid approach is inspired by research on mesh–particle
 coupling, not a direct implementation of a commercial solver:
 https://doi.org/10.1186/s40323-021-00196-3
+
+
+## First physical-machine coupling trial
+
+The CI test moves a **bank** to a known work position, then drives the real
+Jolt boom motor downward through it. The excavator itself is never teleported.
+A correct test must remove at least 15 litres by moving the powered bucket lip
+and conserve total material volume. The bank is 1.32 m high for gravel and
+1.45 m high for clay, before repose relaxation.
+
+Manual discharge is tested independently using the same flag as holding R.
+Automatic spill based on actual bucket curl angle remains a separate control
+condition and has NOT yet been calibrated against a correctly modelled
+bucket shell or hydraulic linkages.

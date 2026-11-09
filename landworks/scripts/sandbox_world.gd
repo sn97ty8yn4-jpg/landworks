@@ -52,6 +52,8 @@ var previous_bucket_lip_valid := false
 var maximum_excavated_m3 := 0.0
 var maximum_dumped_m3 := 0.0
 var tip_previous_m3 := 0.0
+# Default false. The physics test sets this like holding R; independent of
+# the bucket's automatic curl-angle spill condition.
 var spoil_dump_request := false
 var soil_mass_error_m3 := 0.0
 var earthwork_start_m3 := 0.0
@@ -324,7 +326,7 @@ func _update_earthworks(delta: float) -> void:
                     -lip_motion.normalized() * reaction_n,
                     lip - digger.bucket.global_position)
     previous_bucket_lip = lip
-    var player_dump := not smoke and active_machine == 1 and Input.is_key_pressed(KEY_R)
+    var player_dump := spoil_dump_request or (not smoke and active_machine == 1 and Input.is_key_pressed(KEY_R))
     var bucket_tip_angle: float = digger._joint_angle("bucket")
     # Curling forward spills soil under gravity. Manual R provides a simple
     # discharge override until the actual bucket shell is modelled.

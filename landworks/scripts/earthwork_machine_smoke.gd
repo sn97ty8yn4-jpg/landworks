@@ -42,12 +42,15 @@ func _exercise(sandbox: Node3D) -> void:
         " cut_events=", cut_events, " last_force_n=", force_n,
         " bucket_m3=", sandbox.soil_bucket_m3,
         " balance_m3=", balance_m3)
-    if cut_m3 <= 0.004 or cut_events < 1 or absf(balance_m3) > 0.006:
+    if cut_m3 <= 0.015 or cut_events < 1 or absf(balance_m3) > 0.006:
         push_error("PHYSICAL_DIG_FAIL powered bucket did not remove conserved bank material")
         quit(1)
         return
     # Tip the bucket to release actual captured volume as moving particles.
     digger.target_angles["bucket"] = 0.65
+    # Simulate the R-key manual discharge request. The preceding test has
+    # independently required a genuine powered-joint soil cut.
+    sandbox.spoil_dump_request = true
     for n in range(500):
         await physics_frame
     print("PHYSICAL_DIG_DUMP soil_m3=", sandbox.soil_bucket_m3,

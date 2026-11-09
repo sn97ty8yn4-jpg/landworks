@@ -66,8 +66,8 @@ func _initialise_data() -> void:
             # Two distinct banks within one collision-backed work pad.
             var gravel_d2 := pow((x + 1.8) / 2.55, 2) + pow((z + 1.4) / 2.15, 2)
             var clay_d2 := pow((x - 4.8) / 2.25, 2) + pow((z - 2.9) / 2.3, 2)
-            var gravel_h := maxf(0.0, 0.95 * (1.0 - gravel_d2))
-            var clay_h := maxf(0.0, 1.1 * (1.0 - clay_d2))
+            var gravel_h := maxf(0.0, 1.32 * (1.0 - gravel_d2))
+            var clay_h := maxf(0.0, 1.45 * (1.0 - clay_d2))
             var id := _idx(i, j)
             height_values[id] = BASE_HEIGHT + maxf(gravel_h, clay_h)
             material_ids[id] = 1 if clay_h > gravel_h else 0
