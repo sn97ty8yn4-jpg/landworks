@@ -35,6 +35,7 @@ var deposited_total_m3 := 0.0
 var offsite_m3 := 0.0
 var peak_particles := 0
 var last_cut_force_n := 0.0
+var peak_cut_force_n := 0.0
 var cut_events := 0
 var spill_events := 0
 
@@ -243,6 +244,7 @@ func cut_sweep(start: Vector3, finish: Vector3, tool_width_m: float,
         cut_events += 1
     var force := minf(22000.0, pressure_sum / maxf(1.0, float(candidate_count) * 0.25))
     last_cut_force_n = force
+    peak_cut_force_n = maxf(peak_cut_force_n, force)
     return {"volume_m3": volume, "force_n": force}
 
 func release_soil(world_tip: Vector3, direction: Vector3,
