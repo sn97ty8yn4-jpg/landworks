@@ -320,8 +320,8 @@ func _slump(dt: float) -> void:
         for i in range(1, N - 2):
             var source_id := _idx(i, j)
             for neighbor in [_idx(i + 1, j), _idx(i, j + 1)]:
-                var left := source_id if height_values[source_id] > height_values[neighbor] else neighbor
-                var right := neighbor if left == source_id else source_id
+                var left: int = source_id if height_values[source_id] > height_values[neighbor] else neighbor
+                var right: int = neighbor if left == source_id else source_id
                 var mat: Dictionary = SOIL_TYPES["clay" if material_ids[left] == 1 else "gravel"]
                 var max_slope := tan(deg_to_rad(float(mat["repose_deg"]))) * CELL
                 var excess := height_values[left] - height_values[right] - max_slope
