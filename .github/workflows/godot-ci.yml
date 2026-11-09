@@ -56,6 +56,10 @@ jobs:
         shell: bash
         run: |
           mkdir -p ci-logs
+          # These historical mathematical screening CSVs are not game assets.
+          # Godot 4.6.1 can intermittently crash when reimporting them in CI.
+          # Keep source reports in GitHub; exclude only the ephemeral CI copies.
+          find reports/offline_screening -maxdepth 1 -type f -name '*.csv' -delete
           set -o pipefail
           timeout 180s godot --headless --path . --editor --import 2>&1 | tee ci-logs/godot-import.log
 
