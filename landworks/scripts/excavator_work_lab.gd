@@ -10,6 +10,7 @@ const LOADS := {"lift_250": 250.0, "lift_500": 500.0, "lift_1000": 1000.0,
 const APPROX_DRY_GRASS_TRACK_MU := 0.56
 const TRACK_MACHINE_MASS_KG := 8170.0
 const TRACK_SPEED_FEEDBACK_N_PER_MPS := 24000.0
+const TRACK_LATERAL_SKID_N_PER_MPS := 1900.0
 const BOOM_TORQUE_LIMIT_NM := 75000.0  # engineering starting assumption, NOT OEM value
 const STICK_TORQUE_LIMIT_NM := 45000.0
 const BUCKET_TORQUE_LIMIT_NM := 20000.0
@@ -38,6 +39,10 @@ var completed := false
 var sample_at_10 := false
 var initial_payload_mass := 500.0
 var max_base_yaw_deg := 0.0
+var last_track_left_force_n := 0.0
+var last_track_right_force_n := 0.0
+var start_base_xz := Vector2.ZERO
+var max_base_planar_displacement_m := 0.0
 
 func _ready() -> void:
     for arg in OS.get_cmdline_user_args():
@@ -56,6 +61,7 @@ func _ready() -> void:
         DirAccess.make_dir_recursive_absolute(output_dir)
     super._ready()
     start_base_z = undercarriage.global_position.z
+    start_base_xz = Vector2(undercarriage.global_position.x, undercarriage.global_position.z)
     settled_height = test_mass.global_position.y
     data_file = FileAccess.open(_out("excavator_" + case_name + "_samples.csv"), FileAccess.WRITE)
     if data_file == null:
@@ -64,7 +70,8 @@ func _ready() -> void:
         return
     data_file.store_csv_line(PackedStringArray(["time_s", "case", "phase", "payload_kg",
         "payload_y_m", "load_lift_m", "base_z_m", "base_speed_kmh", "chassis_tilt_deg",
-        "slew_deg", "boom_deg", "stick_deg", "bucket_deg", "ground_contacts", "base_yaw_deg"]))
+        "slew_deg", "boom_deg", "stick_deg", "bucket_deg", "ground_contacts", "base_yaw_deg", "left_track_force_n",
+        "right_track_force_n", "base_planar_displacement_m"]))
 
 func _out(filename: String) -> String:
     return "user://" + filename if output_dir == "" else output_dir.path_join(filename)
@@ -87,8 +94,8 @@ func _make_ground_tracks() -> void:
     # These are passive box-track proxies, not powered linked tracks. A high
     # static friction coefficient arrests the rigid body before contact drive
     # forces can act; drive traction is separately force-limited per side.
-    mat.friction = 0.18
-    mat.rough = true
+    mat.friction = 0.015
+    mat.rough = false
     undercarriage.physics_material_override = mat
     # Wide, real rigid-body track contact area rather than a frozen chassis.
     for x in [-0.86, 0.86]:
@@ -178,37 +185,58 @@ func _control_slew(target_rad: float) -> void:
         -clampf(2.0 * error - 0.65 * rel_ang_vel, -0.45, 0.45))
 
 func _drive_tracks(target_left: float, target_right: float) -> void:
-    # Physical hull-on-ground contact comes from Jolt. Each track then applies
-    # a force at its own lateral lever arm, with an estimated Coulomb traction
-    # budget based on total normal load and the number of grounded contacts.
-    # The *local track contact velocity* includes chassis yaw, so opposite
-    # commands can converge to a physical neutral turn.
-    var basis := undercarriage.global_transform.basis
+    # Track contact-force approximation: two longitudinal contact patches per
+    # side, with independent tangential (drive) and lateral (skid) response.
+    # The collision shapes retain obstacle contact but must NOT carry strong
+    # isotropic friction: that would lock neutral turns and double-count grip.
+    var basis: Basis = undercarriage.global_transform.basis
     var forward: Vector3 = -basis.z.normalized()
+    var right: Vector3 = basis.x.normalized()
     ground_contact_count = 0
-    for side in [-1.0, 1.0]:
-        var contacts := 0
+    last_track_left_force_n = 0.0
+    last_track_right_force_n = 0.0
+    var track_speed_commands := [target_left, target_right]
+    for index in range(2):
+        var side := -1.0 if index == 0 else 1.0
+        var requested: float = track_speed_commands[index]
+        var contact_positions: Array[Vector3] = []
         for z in [-1.08, 1.08]:
-            var location := Vector3(0.86 * side, 0.23, z)
-            var start: Vector3 = undercarriage.to_global(location)
-            var query := PhysicsRayQueryParameters3D.create(start, start + Vector3.DOWN * 0.60)
+            var local := Vector3(0.86 * side, 0.23, z)
+            var ray_origin: Vector3 = undercarriage.to_global(local)
+            var query := PhysicsRayQueryParameters3D.create(
+                ray_origin, ray_origin + Vector3.DOWN * 0.60)
             query.exclude = [undercarriage.get_rid()]
             var hit := get_world_3d().direct_space_state.intersect_ray(query)
             if not hit.is_empty():
-                contacts += 1
-                ground_contact_count += 1
+                contact_positions.append(local)
+        var contacts := contact_positions.size()
+        ground_contact_count += contacts
         if contacts == 0:
             continue
-        var at_body := basis * Vector3(side * 0.86, 0.20, 0.0)
-        var point_velocity := undercarriage.linear_velocity + undercarriage.angular_velocity.cross(at_body)
-        var contact_forward_speed := point_velocity.dot(forward)
-        var requested: float = target_left if side < 0.0 else target_right
-        var normal_load_n := (TRACK_MACHINE_MASS_KG + initial_payload_mass) * 9.81 * 0.5
-        var contact_fraction := float(contacts) / 2.0
-        var traction_cap := minf(20000.0, APPROX_DRY_GRASS_TRACK_MU * normal_load_n * contact_fraction)
-        var force := clampf((requested - contact_forward_speed) * TRACK_SPEED_FEEDBACK_N_PER_MPS,
-            -traction_cap, traction_cap)
-        undercarriage.apply_force(forward * force, at_body)
+        # Normal-load estimate is split over the side's two test contacts.
+        # No suspension compliance yet: limits are intentionally approximate.
+        var side_normal_n := (TRACK_MACHINE_MASS_KG + initial_payload_mass) * 9.81 * 0.5
+        var per_patch_mu_n := APPROX_DRY_GRASS_TRACK_MU * side_normal_n / 2.0
+        for local in contact_positions:
+            var arm: Vector3 = basis * local
+            var point_velocity: Vector3 = undercarriage.linear_velocity + undercarriage.angular_velocity.cross(arm)
+            var longitudinal_mps := point_velocity.dot(forward)
+            var lateral_mps := point_velocity.dot(right)
+            var drive_n := clampf(
+                (requested - longitudinal_mps) * TRACK_SPEED_FEEDBACK_N_PER_MPS / float(contacts),
+                -per_patch_mu_n, per_patch_mu_n)
+            # Sideways sliding of a rubber track is resisted, but not welded
+            # to the ground. The front/rear patch arms create realistic
+            # turning scrub and help damp yaw oscillations.
+            var lateral_n := -lateral_mps * TRACK_LATERAL_SKID_N_PER_MPS
+            var combined := Vector2(drive_n, lateral_n)
+            if combined.length() > per_patch_mu_n:
+                combined *= per_patch_mu_n / combined.length()
+            undercarriage.apply_force(forward * combined.x + right * combined.y, arm)
+            if index == 0:
+                last_track_left_force_n += combined.x
+            else:
+                last_track_right_force_n += combined.x
 
 func _test_phase() -> String:
     if elapsed < 2.0:
@@ -251,6 +279,8 @@ func _physics_process(delta: float) -> void:
     peak_load_lift_m = maxf(peak_load_lift_m, height_change)
     peak_load_drop_m = minf(peak_load_drop_m, height_change)
     max_travel_m = maxf(max_travel_m, absf(undercarriage.global_position.z - start_base_z))
+    var planar: Vector2 = Vector2(undercarriage.global_position.x, undercarriage.global_position.z)
+    max_base_planar_displacement_m = maxf(max_base_planar_displacement_m, planar.distance_to(start_base_xz))
     var slew_deg := rad_to_deg(_relative_slew_rad())
     max_slew_deg = maxf(max_slew_deg, absf(slew_deg))
     var under_basis := undercarriage.global_transform.basis
@@ -273,7 +303,8 @@ func _physics_process(delta: float) -> void:
             "%.3f" % rad_to_deg(_joint_angle("boom")),
             "%.3f" % rad_to_deg(_joint_angle("stick")),
             "%.3f" % rad_to_deg(_joint_angle("bucket")), str(ground_contact_count),
-            "%.3f" % base_yaw_deg
+            "%.3f" % base_yaw_deg, "%.1f" % last_track_left_force_n,
+            "%.1f" % last_track_right_force_n, "%.3f" % max_base_planar_displacement_m
         ]))
     labels.text = "LANDWORKS | FREE-CHASSIS EXCAVATOR FIELD TEST\n"
     labels.text += "%s | %s | %.0f kg load | lift %+.2f m | slew %.1f°\n" % [case_name, phase, initial_payload_mass, height_change, slew_deg]
@@ -290,11 +321,12 @@ func _finish() -> void:
     if f != null:
         f.store_csv_line(PackedStringArray(["scenario", "payload_kg", "peak_lift_m", "peak_drop_m", "hold_drift_m",
             "base_travel_m", "max_slew_deg", "max_chassis_tilt_deg", "tipping_detected",
-            "max_base_yaw_deg"]))
+            "max_base_yaw_deg", "base_planar_displacement_m"]))
         f.store_csv_line(PackedStringArray([case_name, "%.0f" % initial_payload_mass,
             "%.3f" % peak_load_lift_m, "%.3f" % peak_load_drop_m, "%.3f" % hold_drift_m,
             "%.3f" % max_travel_m, "%.3f" % max_slew_deg, "%.3f" % peak_tilt_deg,
-            str(int(tip_detected)), "%.3f" % max_base_yaw_deg]))
+            str(int(tip_detected)), "%.3f" % max_base_yaw_deg,
+            "%.3f" % max_base_planar_displacement_m]))
         f.close()
     print("LANDWORKS_EXCAVATOR_TEST_COMPLETE ", case_name, " ", path)
     if batch:

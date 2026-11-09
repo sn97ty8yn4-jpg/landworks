@@ -18,7 +18,8 @@ SUMMARY_FIELDS = {
     "tractor": ("peak_kmh", "forward_distance_m", "brake_displacement_m",
                 "max_articulation_deg", "max_tilt_deg", "max_hitch_error_m", "tipped"),
     "excavator": ("peak_lift_m", "hold_drift_m", "base_travel_m", "max_slew_deg",
-                  "max_chassis_tilt_deg", "tipping_detected", "max_base_yaw_deg"),
+                  "max_chassis_tilt_deg", "tipping_detected", "max_base_yaw_deg", 
+                  "base_planar_displacement_m"),
 }
 FAILURES = "FAIL"
 
@@ -48,14 +49,19 @@ def check_case(case: str, r: dict[str, float]) -> list[str]:
     if case.startswith("lift_"):
         if r["max_slew_deg"] < 45 or r["max_slew_deg"] > 105:
             problems.append("slew outside 45-105 degrees")
-        if r["base_travel_m"] < 1 or r["base_travel_m"] > 15:
-            problems.append("crawler distance outside 1-15 m")
+        if case == "lift_pivot_500":
+            if r["base_planar_displacement_m"] > 0.9:
+                problems.append("neutral turn drifted more than 0.9 m")
+        elif r["base_travel_m"] < 1 or r["base_travel_m"] > 15:
+            problems.append("crawler straight distance outside 1-15 m")
         if r["max_chassis_tilt_deg"] > 18 or r["tipping_detected"] > 0:
             problems.append("chassis instability")
         if r["hold_drift_m"] > 0.20:
             problems.append("load drifts during HOLD phase")
         if case == "lift_pivot_500" and r["max_base_yaw_deg"] < 35:
             problems.append("opposed crawler commands did not produce pivot turn")
+        if case != "lift_pivot_500" and r["max_base_yaw_deg"] > 35:
+            problems.append("uncommanded crawler yaw greater than 35 degrees")
         if case == "lift_1000":
             if r["peak_lift_m"] > 0.25:
                 problems.append("nominally overloaded 1000 kg case unexpectedly lifted")
