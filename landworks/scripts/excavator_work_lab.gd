@@ -77,7 +77,10 @@ func _make_ground_tracks() -> void:
     undercarriage.collision_mask = 1
     add_child(undercarriage)
     var mat := PhysicsMaterial.new()
-    mat.friction = 1.0
+    # These are passive box-track proxies, not powered linked tracks. A high
+    # static friction coefficient arrests the rigid body before contact drive
+    # forces can act; drive traction is separately force-limited per side.
+    mat.friction = 0.18
     mat.rough = true
     undercarriage.physics_material_override = mat
     # Wide, real rigid-body track contact area rather than a frozen chassis.
@@ -162,8 +165,10 @@ func _relative_slew_rad() -> float:
 func _control_slew(target_rad: float) -> void:
     var error := wrapf(target_rad - _relative_slew_rad(), -PI, PI)
     var rel_ang_vel: float = (upper.angular_velocity - undercarriage.angular_velocity).dot(Vector3.UP)
+    # The Jolt hinge-motor sign is opposite to the measured yaw sign here.
+    # Without this inversion the carriage spins uncommanded toward 180 degrees.
     slew_joint.set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY,
-        clampf(2.0 * error - 0.65 * rel_ang_vel, -0.45, 0.45))
+        -clampf(2.0 * error - 0.65 * rel_ang_vel, -0.45, 0.45))
 
 func _drive_tracks(target_left: float, target_right: float) -> void:
     # Four physical ground-contact queries. Traction is limited and applied at
