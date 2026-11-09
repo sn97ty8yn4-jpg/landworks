@@ -74,3 +74,22 @@ at contact height. Its telemetry must show at least 0.4 m of crate motion
 without direct transform changes. The first sandbox experiment moved
 the tractor and crawler but only nudged the crate 0.017 m because the
 bucket was still raised. That defect motivated the new regression gate.
+ 
+
+## Actual earthmoving work pad (hybrid system)
+
+The worksite now contains an 18 m collision-backed, deformable soil pad
+centred near (0, -12), with a gravel bank and a clay bank. Drive the excavator
+toward it and scrape the **moving physical bucket lip** through a bank.
+The test rig transfers measured cut volume into a 240 L provisional bucket
+store, applies an opposing soil-cut reaction to the Jolt bucket, and permits
+spilling when the bucket is curled forward or **R** is held.
+
+Released soil moves as short-lived 4.5 L falling parcels, then deposits
+back into the same mutable heightfield. The 41×41 terrain mesh and collision
+shape are refreshed only while dirty. A volume ledger tracks soil in the
+ground, bucket, moving parcels and material discharged beyond the pad.
+
+This is **not** fully resolved particle physics. See
+`docs/EARTHWORKS.md` for resolution, soil assumptions, force models,
+conservation limitations and the independent Godot mass-balance test.

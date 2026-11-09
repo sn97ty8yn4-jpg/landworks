@@ -9,6 +9,7 @@ const T = preload("res://landworks/scripts/tractor.gd")
 const E = preload("res://landworks/scripts/sandbox_excavator.gd")
 const TRAILER = preload("res://landworks/scripts/work_trailer.gd")
 const SOIL = preload("res://landworks/scripts/ground_response.gd")
+const EARTH = preload("res://landworks/scripts/earthworks.gd")
 
 const SMOKE_DURATION_S := 21.0
 const CLAY_START_X := 18.0
@@ -43,6 +44,17 @@ var max_hitch_error := 0.0
 var max_tilt := 0.0
 var peak_pressure := 0.0
 var initial_boom := 0.0
+var earth: Node3D
+var soil_bucket_m3 := 0.0
+var soil_bucket_material := "gravel"
+var previous_bucket_lip := Vector3.ZERO
+var previous_bucket_lip_valid := false
+var maximum_excavated_m3 := 0.0
+var maximum_dumped_m3 := 0.0
+var tip_previous_m3 := 0.0
+var spoil_dump_request := false
+var soil_mass_error_m3 := 0.0
+var earthwork_start_m3 := 0.0
 
 func _ready() -> void:
     for arg in OS.get_cmdline_user_args():
@@ -55,6 +67,7 @@ func _ready() -> void:
     _build_terrain()
     _build_scenery()
     _build_machines()
+    _build_earthworks()
     _build_loose_objects()
     _build_environment()
     _build_ui()
@@ -146,6 +159,13 @@ func _build_machines() -> void:
     digger = E.new()
     digger.name = "Excavator"
     add_child(digger)
+
+func _build_earthworks() -> void:
+    earth = EARTH.new()
+    earth.name = "GranularExcavationPad_GravelAndClay"
+    earth.position = Vector3(0, 0, -12)
+    add_child(earth)
+    earthwork_start_m3 = earth.ground_volume_m3()
 
 func _make_prop(name: String, kg: float, location: Vector3,
         radius: float, cylinder: bool, tint: Color) -> void:
@@ -243,6 +263,7 @@ func _physics_process(delta: float) -> void:
             prop_surfaces[item.get_instance_id()] = str(p["name"])
         if item != digger.test_mass or item.global_position.x > CLAY_START_X:
             SOIL.apply_ground_resistance(item, p)
+    _update_earthworks(delta)
     if not smoke:
         return
     smoke_time += delta
@@ -274,6 +295,48 @@ func _physics_process(delta: float) -> void:
         ]))
     if smoke_time >= SMOKE_DURATION_S:
         _finish_smoke()
+
+func _update_earthworks(delta: float) -> void:
+    # Engine-driven physical lip path: no soil is excavated by an animation or
+    # player pressing a magical remove-soil button. The bucket must reach an
+    # actual bank and move through it while below the soil surface.
+    var lip: Vector3 = digger.bucket.to_global(Vector3(0, 0, -digger.BUCKET_LENGTH))
+    if not previous_bucket_lip_valid:
+        previous_bucket_lip = lip
+        previous_bucket_lip_valid = true
+        return
+    var lip_motion := lip - previous_bucket_lip
+    var free_volume := maxf(0.0, earth.MAX_BUCKET_M3 - soil_bucket_m3)
+    if free_volume > 0.0001 and earth.has_position(lip):
+        var result: Dictionary = earth.cut_sweep(previous_bucket_lip,
+            lip, 0.76, free_volume)
+        var cut_volume: float = result["volume_m3"]
+        if cut_volume > 0.0:
+            soil_bucket_m3 += cut_volume
+            maximum_excavated_m3 += cut_volume
+            soil_bucket_material = "clay" if lip.x > 3.1 else "gravel"
+            var reaction_n: float = result["force_n"]
+            # Push back on the REAL Jolt bucket at the tooth edge; this force
+            # can oppose the cylinder motor, react through arm pins and tip
+            # the chassis rather than being a cosmetic cutting effect.
+            if lip_motion.length() > 0.002:
+                digger.bucket.apply_force(
+                    -lip_motion.normalized() * reaction_n,
+                    lip - digger.bucket.global_position)
+    previous_bucket_lip = lip
+    var player_dump := not smoke and active_machine == 1 and Input.is_key_pressed(KEY_R)
+    var bucket_tip_angle: float = digger._joint_angle("bucket")
+    # Curling forward spills soil under gravity. Manual R provides a simple
+    # discharge override until the actual bucket shell is modelled.
+    var tipped_forward := bucket_tip_angle > 0.32
+    if soil_bucket_m3 > 0.0001 and (player_dump or tipped_forward):
+        var release_volume := minf(soil_bucket_m3, delta * 0.115)
+        var released: float = earth.release_soil(
+            lip + Vector3.UP * 0.14, digger.bucket.linear_velocity,
+            release_volume, soil_bucket_material)
+        soil_bucket_m3 -= released
+        maximum_dumped_m3 += released
+    soil_mass_error_m3 = earth.ground_volume_m3() + soil_bucket_m3 +         earth.mobile_volume_m3() + earth.offsite_m3 - earthwork_start_m3
 
 func _finish_smoke() -> void:
     smoke_file.close()
@@ -339,4 +402,8 @@ func _process(delta: float) -> void:
         status.text += "Hydraulic %.1f MPa / %.1f Lpm | track contacts %d/4\n" % [
             float(digger.hydraulic_state.get("pressure_mpa", 0.0)),
             float(digger.hydraulic_state.get("flow_lpm", 0.0)), digger.ground_contact_count]
-    status.text += "400kg trailer, 450kg log, 900kg rock, 650kg crates, 1500kg push crate | Z/C camera | F12 old yard"
+    status.text += "SOIL: bucket %.0f L / %.0f L | cut %.0f L | spilled %.0f L | grains %d | ledger error %.2f L\\n" % [
+        soil_bucket_m3 * 1000.0, earth.MAX_BUCKET_M3 * 1000.0,
+        maximum_excavated_m3 * 1000.0, maximum_dumped_m3 * 1000.0,
+        earth.mobile.size(), soil_mass_error_m3 * 1000.0]
+    status.text += "Earthmoving banks ahead: gravel and cohesive clay | R to dump | TAB change machine | F12 old yard"
