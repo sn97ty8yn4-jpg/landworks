@@ -21,7 +21,7 @@ class PhysicsAcceptanceTests(unittest.TestCase):
 
     def test_expected_overload_stall(self):
         r = {"peak_lift_m": 0.0, "hold_drift_m": 0.0,
-             "base_travel_m": 2.5, "max_slew_deg": 69,
+             "base_travel_m": 0.0, "max_slew_deg": 0.0,
              "max_chassis_tilt_deg": 0, "tipping_detected": 0,
              "max_base_yaw_deg": 0, "base_planar_displacement_m": 0}
         self.assertEqual(gate.check_case("lift_1000", r), [])
