@@ -30,7 +30,7 @@ def analyse(directory:Path) -> list[dict]:
             if float(record['base_travel_m'])<0.7: flags.append('DID_NOT_TRAVEL')
             if int(record['tipping_detected']): flags.append('TIP_EVENT')
             note='; '.join(flags) if flags else 'Completed geometric sanity checks; calibration still required'
-        results.append(dict(scenario=scenario,status='REVIEW' if flags else 'PRELIM_PASS',note=note,**record))
+        results.append({**record, 'scenario': scenario, 'status': 'REVIEW' if flags else 'PRELIM_PASS', 'note': note})
     return results
 
 def main():
