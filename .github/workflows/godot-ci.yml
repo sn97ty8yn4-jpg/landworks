@@ -62,6 +62,11 @@ jobs:
           find reports/offline_screening -maxdepth 1 -type f -name '*.csv' -delete
           set -o pipefail
           timeout 180s godot --headless --path . --editor --import 2>&1 | tee ci-logs/godot-import.log
+          # Godot sometimes returns 0 despite a failed GDScript resource load.
+          if grep -E 'SCRIPT ERROR:|Parse Error:|Failed to load script' ci-logs/godot-import.log; then
+            echo "::error::Godot reported script import/parse failures despite exit code 0"
+            exit 1
+          fi
 
       - name: Validate hydraulic pump flow/pressure bounds in Godot
         run: godot --headless --path . --script res://landworks/scripts/hydraulic_smoke.gd

@@ -313,7 +313,7 @@ func _process(delta: float) -> void:
     var focus := target.global_position + Vector3.UP * (0.6 if active_machine == 0 else 1.5)
     var dist := 7.8 if active_machine == 0 else 13.0
     var height := 3.8 if active_machine == 0 else 6.8
-    var wanted := focus + Vector3(sin(orbit_y) * dist, height, cos(orbit_y) * dist)
+    var wanted := focus + Vector3(sin(orbit_yaw) * dist, height, cos(orbit_yaw) * dist)
     camera.global_position = camera.global_position.lerp(wanted, clampf(delta * 4.5, 0.0, 1.0))
     camera.look_at(focus, Vector3.UP)
     var speed := tractor.linear_velocity.length() * 3.6
