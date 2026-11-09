@@ -1,0 +1,274 @@
+# Free-chassis excavator working test: physically linked 8.17t machine, powered
+# steel arm joints, a real 250/500/1000kg suspended load, slewing, and tracked
+# travel-force proxy. All outcomes come from solver state, not visual animation.
+extends "res://landworks/scripts/physical_excavator_lab.gd"
+
+const LOADS := {"lift_250": 250.0, "lift_500": 500.0, "lift_1000": 1000.0}
+const BOOM_TORQUE_LIMIT_NM := 75000.0  # engineering starting assumption, NOT OEM value
+const STICK_TORQUE_LIMIT_NM := 45000.0
+const BUCKET_TORQUE_LIMIT_NM := 20000.0
+const SLEW_TORQUE_LIMIT_NM := 25000.0
+const TEST_END_S := 32.0
+
+var case_name := "lift_500"
+var output_dir := ""
+var batch := false
+var upper: RigidBody3D
+var slew_joint: HingeJoint3D
+var data_file: FileAccess
+var sample_elapsed := 0.0
+var peak_tilt_deg := 0.0
+var peak_load_lift_m := 0.0
+var peak_load_drop_m := 0.0
+var max_travel_m := 0.0
+var start_base_z := 0.0
+var hold_height := 0.0
+var hold_drift_m := 0.0
+var settled_height := 0.0
+var max_slew_deg := 0.0
+var ground_contact_count := 0
+var tip_detected := false
+var completed := false
+var sample_at_10 := false
+var initial_payload_mass := 500.0
+
+func _ready() -> void:
+    for arg in OS.get_cmdline_user_args():
+        if arg.begins_with("--scenario="):
+            case_name = arg.trim_prefix("--scenario=")
+        elif arg.begins_with("--output-dir="):
+            output_dir = arg.trim_prefix("--output-dir=")
+        elif arg == "--batch":
+            batch = true
+    if not LOADS.has(case_name):
+        push_error("Unknown excavator scenario: " + case_name)
+        get_tree().quit(3)
+        return
+    initial_payload_mass = float(LOADS[case_name])
+    if output_dir != "":
+        DirAccess.make_dir_recursive_absolute(output_dir)
+    super._ready()
+    start_base_z = undercarriage.global_position.z
+    settled_height = test_mass.global_position.y
+    data_file = FileAccess.open(_out("excavator_" + case_name + "_samples.csv"), FileAccess.WRITE)
+    if data_file == null:
+        push_error("Cannot create excavator work-test CSV")
+        get_tree().quit(4)
+        return
+    data_file.store_csv_line(PackedStringArray(["time_s", "case", "phase", "payload_kg",
+        "payload_y_m", "load_lift_m", "base_z_m", "base_speed_kmh", "chassis_tilt_deg",
+        "slew_deg", "boom_deg", "stick_deg", "bucket_deg", "ground_contacts"]))
+
+func _out(filename: String) -> String:
+    return "user://" + filename if output_dir == "" else output_dir.path_join(filename)
+
+func _motor_impulse(max_torque_nm: float) -> float:
+    return max_torque_nm / float(Engine.physics_ticks_per_second)
+
+func _make_ground_tracks() -> void:
+    undercarriage = RigidBody3D.new()
+    undercarriage.name = "KX080_Lower_2200kg_Unfrozen"
+    undercarriage.mass = 2200.0
+    undercarriage.can_sleep = false
+    undercarriage.continuous_cd = true
+    undercarriage.linear_damp = 0.05
+    undercarriage.angular_damp = 0.20
+    undercarriage.collision_layer = 2
+    undercarriage.collision_mask = 1
+    add_child(undercarriage)
+    var mat := PhysicsMaterial.new()
+    mat.friction = 1.0
+    mat.rough = true
+    undercarriage.physics_material_override = mat
+    # Wide, real rigid-body track contact area rather than a frozen chassis.
+    for x in [-0.86, 0.86]:
+        var shape := BoxShape3D.new()
+        shape.size = Vector3(0.46, 0.54, 3.10)
+        var c := CollisionShape3D.new()
+        c.shape = shape
+        c.position = Vector3(x, 0.27, 0.0)
+        undercarriage.add_child(c)
+        M.block(undercarriage, shape.size, c.position, Color("#222a2c"))
+    M.block(undercarriage, Vector3(1.50, 0.28, 2.50), Vector3(0, 0.67, 0.03), Color("#43484b"))
+
+func _build_machine() -> void:
+    _make_ground_tracks()
+    upper = RigidBody3D.new()
+    upper.name = "KX080_UpperCounterweight_4710kg"
+    upper.mass = 4710.0
+    upper.can_sleep = false
+    upper.continuous_cd = true
+    upper.linear_damp = 0.07
+    upper.angular_damp = 0.12
+    upper.collision_layer = 2
+    upper.collision_mask = 1
+    add_child(upper)
+    var c := CollisionShape3D.new()
+    var shape := BoxShape3D.new()
+    shape.size = Vector3(1.94, 0.86, 2.45)
+    c.shape = shape
+    c.position = Vector3(0, 1.44, 0.20)
+    upper.add_child(c)
+    M.block(upper, shape.size, c.position, Color("#e77c17"))
+    M.block(upper, Vector3(0.90, 1.20, 1.0), Vector3(-0.43, 2.22, -0.28), Color("#333d40"))
+    M.block(upper, Vector3(1.69, 0.38, 0.73), Vector3(0, 1.52, 1.11), Color("#bf6816"))
+    _make_hinge("slew", undercarriage, upper, Vector3(0, 0.97, 0),
+        Vector3.UP, -PI, PI, _motor_impulse(SLEW_TORQUE_LIMIT_NM))
+    slew_joint = hinges["slew"]["joint"]
+    slew_joint.set_flag(HingeJoint3D.FLAG_USE_LIMIT, false)
+    var boom_pin := Vector3(0.48, 2.12, -0.66)
+    boom = _make_box("Boom_650kg", 650.0, boom_pin, 0.24,
+        BOOM_LENGTH, 0.46, 0.46, Color("#f08820"))
+    var stick_pin: Vector3 = boom.to_global(Vector3(0, 0, -BOOM_LENGTH))
+    stick = _make_box("Stick_400kg", 400.0, stick_pin, -0.48,
+        STICK_LENGTH, 0.34, 0.34, Color("#e97a17"))
+    var bucket_pin: Vector3 = stick.to_global(Vector3(0, 0, -STICK_LENGTH))
+    bucket = _make_box("Bucket_210kg", 210.0, bucket_pin, -0.72,
+        BUCKET_LENGTH, 0.44, 0.76, Color("#42494a"))
+    _make_hinge("boom", upper, boom, boom_pin, Vector3.RIGHT,
+        -0.70, 1.15, _motor_impulse(BOOM_TORQUE_LIMIT_NM))
+    _make_hinge("stick", boom, stick, stick_pin, Vector3.RIGHT,
+        -1.5, 0.15, _motor_impulse(STICK_TORQUE_LIMIT_NM))
+    _make_hinge("bucket", stick, bucket, bucket_pin, Vector3.RIGHT,
+        -1.0, 0.75, _motor_impulse(BUCKET_TORQUE_LIMIT_NM))
+    var hook: Vector3 = bucket.to_global(Vector3(0, 0, -BUCKET_LENGTH))
+    test_mass = RigidBody3D.new()
+    test_mass.name = "Suspended_Test_Load"
+    test_mass.mass = initial_payload_mass
+    test_mass.can_sleep = false
+    test_mass.continuous_cd = true
+    test_mass.collision_layer = 2
+    test_mass.collision_mask = 1
+    add_child(test_mass)
+    test_mass.global_position = hook + Vector3.DOWN * 0.52
+    var load_col := CollisionShape3D.new()
+    var load_shape := BoxShape3D.new()
+    load_shape.size = Vector3(0.78, 0.56, 0.78)
+    load_col.shape = load_shape
+    test_mass.add_child(load_col)
+    M.block(test_mass, load_shape.size, Vector3.ZERO, Color("#b0a892"))
+    var load_pin := PinJoint3D.new()
+    load_pin.name = "PhysicallyAttachedLoad"
+    add_child(load_pin)
+    load_pin.global_position = hook
+    load_pin.node_a = load_pin.get_path_to(bucket)
+    load_pin.node_b = load_pin.get_path_to(test_mass)
+    load_pin.exclude_nodes_from_collision = true
+
+func _relative_slew_rad() -> float:
+    var rel: Basis = undercarriage.global_transform.basis.inverse() * upper.global_transform.basis
+    return atan2(rel.z.x, rel.z.z)
+
+func _control_slew(target_rad: float) -> void:
+    var error := wrapf(target_rad - _relative_slew_rad(), -PI, PI)
+    var rel_ang_vel: float = (upper.angular_velocity - undercarriage.angular_velocity).dot(Vector3.UP)
+    slew_joint.set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY,
+        clampf(2.0 * error - 0.65 * rel_ang_vel, -0.45, 0.45))
+
+func _drive_tracks(target_left: float, target_right: float) -> void:
+    # Four physical ground-contact queries. Traction is limited and applied at
+    # the appropriate side of the lower-carriage. Track links are not modelled.
+    var basis := undercarriage.global_transform.basis
+    var forward: Vector3 = -basis.z.normalized()
+    var current := undercarriage.linear_velocity.dot(forward)
+    ground_contact_count = 0
+    for side in [-1.0, 1.0]:
+        var contacts := 0
+        for z in [-1.08, 1.08]:
+            var location := Vector3(0.86 * side, 0.23, z)
+            var start: Vector3 = undercarriage.to_global(location)
+            var query := PhysicsRayQueryParameters3D.create(start, start + Vector3.DOWN * 0.60)
+            query.exclude = [undercarriage.get_rid()]
+            var hit := get_world_3d().direct_space_state.intersect_ray(query)
+            if not hit.is_empty():
+                contacts += 1
+                ground_contact_count += 1
+        if contacts == 0:
+            continue
+        var requested: float = target_left if side < 0.0 else target_right
+        var traction_cap := 15000.0 * float(contacts) / 2.0
+        var force := clampf((requested - current) * 24000.0, -traction_cap, traction_cap)
+        # Apply at ground-contact height. Yaw emerges from different left/right forces.
+        undercarriage.apply_force(forward * force, basis * Vector3(side * 0.86, 0.20, 0.0))
+
+func _test_phase() -> String:
+    if elapsed < 2.0:
+        return "SETTLE"
+    if elapsed < 10.0:
+        return "RAISE"
+    if elapsed < 13.0:
+        return "HOLD"
+    if elapsed < 19.0:
+        return "SLEW"
+    if elapsed < 26.0:
+        return "TRAVEL_WITH_LOAD"
+    return "STOP_AND_HOLD"
+
+func _physics_process(delta: float) -> void:
+    if completed or data_file == null:
+        return
+    elapsed += delta
+    var phase := _test_phase()
+    # Smooth reference trajectory; powered physics hinges do the actual lifting.
+    var lift_frac := smoothstep(2.0, 10.0, elapsed)
+    target_angles["boom"] = 0.24 + 0.48 * lift_frac
+    target_angles["stick"] = -0.72 + 0.10 * lift_frac
+    target_angles["bucket"] = -0.24 - 0.12 * lift_frac
+    for id in ["boom", "stick", "bucket"]:
+        _drive_joint(id, delta)
+    _control_slew(1.20 * smoothstep(13.0, 19.0, elapsed))
+    if elapsed >= 19.0 and elapsed < 26.0:
+        _drive_tracks(0.66, 0.66)
+    else:
+        _drive_tracks(0.0, 0.0)
+    var up: Vector3 = undercarriage.global_transform.basis.y.normalized()
+    var tip_angle := rad_to_deg(acos(clampf(up.dot(Vector3.UP), -1.0, 1.0)))
+    peak_tilt_deg = maxf(peak_tilt_deg, tip_angle)
+    tip_detected = tip_detected or tip_angle > 20.0
+    var height_change := test_mass.global_position.y - settled_height
+    peak_load_lift_m = maxf(peak_load_lift_m, height_change)
+    peak_load_drop_m = minf(peak_load_drop_m, height_change)
+    max_travel_m = maxf(max_travel_m, absf(undercarriage.global_position.z - start_base_z))
+    var slew_deg := rad_to_deg(_relative_slew_rad())
+    max_slew_deg = maxf(max_slew_deg, absf(slew_deg))
+    if elapsed >= 11.0 and not sample_at_10:
+        hold_height = test_mass.global_position.y
+        sample_at_10 = true
+    if elapsed >= 11.0 and elapsed < 13.0:
+        hold_drift_m = maxf(hold_drift_m, absf(test_mass.global_position.y - hold_height))
+    sample_elapsed += delta
+    if sample_elapsed >= 0.10:
+        sample_elapsed -= 0.10
+        data_file.store_csv_line(PackedStringArray([
+            "%.3f" % elapsed, case_name, phase, "%.0f" % initial_payload_mass,
+            "%.3f" % test_mass.global_position.y, "%.3f" % height_change,
+            "%.3f" % undercarriage.global_position.z,
+            "%.3f" % (Vector2(undercarriage.linear_velocity.x, undercarriage.linear_velocity.z).length() * 3.6),
+            "%.3f" % tip_angle, "%.3f" % slew_deg,
+            "%.3f" % rad_to_deg(_joint_angle("boom")),
+            "%.3f" % rad_to_deg(_joint_angle("stick")),
+            "%.3f" % rad_to_deg(_joint_angle("bucket")), str(ground_contact_count)
+        ]))
+    labels.text = "LANDWORKS | FREE-CHASSIS EXCAVATOR FIELD TEST\n"
+    labels.text += "%s | %s | %.0f kg load | lift %+.2f m | slew %.1f°\n" % [case_name, phase, initial_payload_mass, height_change, slew_deg]
+    labels.text += "Base tilt %.1f° | travel %.2f m | track contacts %d/4\n" % [tip_angle, max_travel_m, ground_contact_count]
+    labels.text += "Boom motor torque cap: %.0f kNm (assumed); real hydraulic circuits NOT simulated." % (BOOM_TORQUE_LIMIT_NM / 1000.0)
+    if elapsed >= TEST_END_S:
+        _finish()
+
+func _finish() -> void:
+    completed = true
+    data_file.close()
+    var path := _out("excavator_" + case_name + "_summary.csv")
+    var f := FileAccess.open(path, FileAccess.WRITE)
+    if f != null:
+        f.store_csv_line(PackedStringArray(["scenario", "payload_kg", "peak_lift_m", "peak_drop_m", "hold_drift_m",
+            "base_travel_m", "max_slew_deg", "max_chassis_tilt_deg", "tipping_detected"]))
+        f.store_csv_line(PackedStringArray([case_name, "%.0f" % initial_payload_mass,
+            "%.3f" % peak_load_lift_m, "%.3f" % peak_load_drop_m, "%.3f" % hold_drift_m,
+            "%.3f" % max_travel_m, "%.3f" % max_slew_deg, "%.3f" % peak_tilt_deg,
+            str(int(tip_detected))]))
+        f.close()
+    print("LANDWORKS_EXCAVATOR_TEST_COMPLETE ", case_name, " ", path)
+    if batch:
+        get_tree().quit(0)

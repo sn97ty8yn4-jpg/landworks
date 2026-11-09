@@ -1,0 +1,8 @@
+case,max_hook_gain_m,min_hook_gain_m,final_angle_deg,hold_drift_m,peak_kmh,total_m,braking_m
+boom_250kg,2.72,0.0,41.3,0.02,,,
+boom_500kg,2.73,0.0,41.3,0.04,,,
+boom_1000kg,0.0,-0.42,9.4,0.0,,,
+tow_0deg_0kg,,,,,14.8,48.5,1.5
+tow_0deg_400kg,,,,,14.8,47.6,1.9
+tow_6deg_400kg,,,,,14.0,42.3,1.4
+tow_6deg_800kg,,,,,13.7,36.7,1.6

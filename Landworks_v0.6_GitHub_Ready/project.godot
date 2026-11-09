@@ -1,0 +1,26 @@
+; Landworks Machinery Test Yard 0.6.0
+; Independent demonstration; copy only /landworks into a Tinybox fork.
+config_version=5
+
+[application]
+config/name="Landworks Working Load Test Yard"
+run/main_scene="res://landworks/scenes/test_yard.tscn"
+config/features=PackedStringArray("4.6", "GL Compatibility")
+
+[display]
+window/size/viewport_width=1600
+window/size/viewport_height=900
+window/stretch/mode="canvas_items"
+window/size/mode=3
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/default_filters/use_nearest_mipmap_filter=false
+
+[physics]
+3d/physics_engine="Jolt Physics"
+common/physics_ticks_per_second=120
+
+[physics/3d]
+default_gravity=9.81

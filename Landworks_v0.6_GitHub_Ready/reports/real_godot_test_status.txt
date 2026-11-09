@@ -1,0 +1,7 @@
+flat_empty    NOT_RUN      No measured Godot CSV
+flat_400      NOT_RUN      No measured Godot CSV
+hill_400      NOT_RUN      No measured Godot CSV
+hill_800      NOT_RUN      No measured Godot CSV
+lift_250      NOT_RUN      No measured Godot CSV
+lift_500      NOT_RUN      No measured Godot CSV
+lift_1000     NOT_RUN      No measured Godot CSV

@@ -1,0 +1,15 @@
+.godot/
+*.import
+__pycache__/
+*.pyc
+landworks/assets/source/*.download
+# Source and rigged meshes can be large; consider Git LFS before committing.
+landworks/assets/workbench/*.blend
+landworks/assets/workbench/*.blend1
+landworks/assets/reports/*.json
+
+# Generated field trial results / Godot cache
+field_test_results/
+engineering_prechecks/
+surrogate_results/
+.godot/
