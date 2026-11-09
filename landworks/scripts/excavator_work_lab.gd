@@ -3,10 +3,15 @@
 # travel-force proxy. All outcomes come from solver state, not visual animation.
 extends "res://landworks/scripts/physical_excavator_lab.gd"
 
+const HYD = preload("res://landworks/scripts/hydraulic_model.gd")
+const SOIL = preload("res://landworks/scripts/ground_response.gd")
+
 const LOADS := {"lift_250": 250.0, "lift_500": 500.0, "lift_1000": 1000.0,
     "lift_pivot_500": 500.0, "drag_1000": 1000.0,
-    "push_1500": 1500.0, "roll_1000": 1000.0}
-const GROUND_HANDLING_CASES := ["drag_1000", "push_1500", "roll_1000"]
+    "push_1500": 1500.0, "roll_1000": 1000.0,
+    "push_clay_1500": 1500.0, "drag_clay_1000": 1000.0}
+const GROUND_HANDLING_CASES := [
+    "drag_1000", "push_1500", "roll_1000", "push_clay_1500", "drag_clay_1000"]
 # Track traction is a contact-force proxy, NOT individual rubber belt dynamics.
 # 8170 kg includes chassis, carriage, boom, arm and bucket, excluding payload.
 const APPROX_DRY_GRASS_TRACK_MU := 0.56
@@ -49,6 +54,13 @@ var last_track_left_force_n := 0.0
 var last_track_right_force_n := 0.0
 var start_base_xz := Vector2.ZERO
 var max_base_planar_displacement_m := 0.0
+var surface_profile: Dictionary = {}
+var last_soil_drag_n := 0.0
+var peak_soil_drag_n := 0.0
+var hydraulic_state: Dictionary = {}
+var minimum_flow_scale := 1.0
+var peak_hydraulic_pressure_mpa := 0.0
+var peak_hydraulic_power_kw := 0.0
 
 func _ready() -> void:
     # Allow the yard to launch a specific physically simulated work case.
@@ -69,6 +81,8 @@ func _ready() -> void:
         get_tree().quit(3)
         return
     initial_payload_mass = float(LOADS[case_name])
+    surface_profile = SOIL.profile("soft_clay" if case_name.ends_with("_clay_1000") or
+        case_name == "push_clay_1500" else "hardpack")
     if output_dir != "":
         DirAccess.make_dir_recursive_absolute(output_dir)
     super._ready()
@@ -84,7 +98,8 @@ func _ready() -> void:
         "payload_y_m", "load_lift_m", "base_z_m", "base_speed_kmh", "chassis_tilt_deg",
         "slew_deg", "boom_deg", "stick_deg", "bucket_deg", "ground_contacts", "base_yaw_deg", "left_track_force_n",
         "right_track_force_n", "base_planar_displacement_m",
-        "object_displacement_m", "object_roll_deg"]))
+        "object_displacement_m", "object_roll_deg",
+        "soil_drag_n", "hydraulic_flow_lpm", "hydraulic_pressure_mpa", "hydraulic_flow_scale"]))
 
 func _out(filename: String) -> String:
     return "user://" + filename if output_dir == "" else output_dir.path_join(filename)
@@ -162,7 +177,7 @@ func _build_machine() -> void:
     _make_hinge("bucket", stick, bucket, bucket_pin, Vector3.RIGHT,
         -1.0, 0.75, _motor_impulse(BUCKET_TORQUE_LIMIT_NM))
     var hook: Vector3 = bucket.to_global(Vector3(0, 0, -BUCKET_LENGTH))
-    var is_free_object := case_name == "push_1500" or case_name == "roll_1000"
+    var is_free_object := case_name.begins_with("push_") or case_name.begins_with("roll_")
     if is_free_object:
         # Real collision toe attached to the rigid bucket; contacts originate
         # in Jolt and the load never receives scripted movement.
@@ -204,7 +219,7 @@ func _build_machine() -> void:
         drum_mat.albedo_color = Color("#626f74")
         visible_drum.material_override = drum_mat
         test_mass.add_child(visible_drum)
-    elif case_name == "push_1500":
+    elif case_name.begins_with("push_"):
         var crate := BoxShape3D.new()
         crate.size = Vector3(1.18, 1.26, 1.0)
         load_col.shape = crate
@@ -217,7 +232,7 @@ func _build_machine() -> void:
         M.block(test_mass, load_shape.size, Vector3.ZERO, Color("#b0a892"))
     if case_name in GROUND_HANDLING_CASES:
         var surface := PhysicsMaterial.new()
-        surface.friction = 0.75 if case_name == "roll_1000" else 0.43
+        surface.friction = 0.75 if case_name == "roll_1000" else float(surface_profile["object_mu"])
         surface.rough = false
         test_mass.physics_material_override = surface
         test_mass.linear_damp = 0.03
@@ -284,7 +299,7 @@ func _drive_tracks(target_left: float, target_right: float) -> void:
         if not (case_name in GROUND_HANDLING_CASES) and peak_load_lift_m > 0.50:
             carried_mass_kg = initial_payload_mass
         var side_normal_n := (TRACK_MACHINE_MASS_KG + carried_mass_kg) * 9.81 * 0.5
-        var per_patch_mu_n := APPROX_DRY_GRASS_TRACK_MU * side_normal_n / 2.0
+        var per_patch_mu_n := float(surface_profile["track_mu"]) * side_normal_n / 2.0
         for local in contact_positions:
             var arm: Vector3 = basis * local
             var point_velocity: Vector3 = undercarriage.linear_velocity + undercarriage.angular_velocity.cross(arm)
@@ -305,6 +320,46 @@ func _drive_tracks(target_left: float, target_right: float) -> void:
                 last_track_left_force_n += combined.x
             else:
                 last_track_right_force_n += combined.x
+
+func _desired_joint_velocity(id: String) -> float:
+    var h: Dictionary = hinges[id]
+    var a: RigidBody3D = h["a"]
+    var b: RigidBody3D = h["b"]
+    var axis_world: Vector3 = a.global_transform.basis * Vector3.RIGHT
+    var error := wrapf(float(target_angles[id]) - _joint_angle(id), -PI, PI)
+    var rel_vel: float = (b.angular_velocity - a.angular_velocity).dot(axis_world)
+    return clampf(3.4 * error - 0.65 * rel_vel,
+        -float(h["max_speed"]), float(h["max_speed"]))
+
+func _drive_hydraulics(_delta: float) -> void:
+    var speed_requests := {}
+    var limit_nm := {"boom": BOOM_TORQUE_LIMIT_NM,
+        "stick": STICK_TORQUE_LIMIT_NM, "bucket": BUCKET_TORQUE_LIMIT_NM}
+    for id in ["boom", "stick", "bucket"]:
+        speed_requests[id] = _desired_joint_velocity(id)
+    # Gravity moments estimated at each actuator; the rigid-body engine
+    # independently resolves REAL mass, load and stall through its hinge motors.
+    var hook: Vector3 = test_mass.global_position
+    var boom_pin: Vector3 = boom.global_position
+    var projected_reach := Vector2(hook.x - boom_pin.x, hook.z - boom_pin.z).length()
+    var payload_nm := initial_payload_mass * 9.81 * projected_reach
+    var estimated := {
+        "boom": 24000.0 + payload_nm,
+        "stick": 14000.0 + initial_payload_mass * 9.81 * 1.1,
+        "bucket": 6200.0 + initial_payload_mass * 9.81 * 0.3
+    }
+    hydraulic_state = HYD.allocate(speed_requests, limit_nm, estimated)
+    minimum_flow_scale = minf(minimum_flow_scale, float(hydraulic_state["flow_scale"]))
+    peak_hydraulic_pressure_mpa = maxf(peak_hydraulic_pressure_mpa,
+        float(hydraulic_state["pressure_mpa"]))
+    peak_hydraulic_power_kw = maxf(peak_hydraulic_power_kw,
+        float(hydraulic_state["hydraulic_power_kw"]))
+    for id in ["boom", "stick", "bucket"]:
+        var joint: HingeJoint3D = hinges[id]["joint"]
+        joint.set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY,
+            -float(hydraulic_state["speeds"][id]))
+        joint.set_param(HingeJoint3D.PARAM_MOTOR_MAX_IMPULSE,
+            float(hydraulic_state["torque_caps"][id]) / float(Engine.physics_ticks_per_second))
 
 func _test_phase() -> String:
     if elapsed < 2.0:
@@ -331,8 +386,7 @@ func _physics_process(delta: float) -> void:
     target_angles["boom"] = 0.24 + 0.48 * lift_frac
     target_angles["stick"] = -0.72 + 0.10 * lift_frac
     target_angles["bucket"] = -0.24 - 0.12 * lift_frac
-    for id in ["boom", "stick", "bucket"]:
-        _drive_joint(id, delta)
+    _drive_hydraulics(delta)
     # Explicit ground handling does NOT depend on lifting capability.
     # The separate failed-lift test remains stationary by test design.
     var carry_authorised := peak_load_lift_m > 0.50
@@ -349,6 +403,10 @@ func _physics_process(delta: float) -> void:
     var tip_angle := rad_to_deg(acos(clampf(up.dot(Vector3.UP), -1.0, 1.0)))
     peak_tilt_deg = maxf(peak_tilt_deg, tip_angle)
     tip_detected = tip_detected or tip_angle > 20.0
+    last_soil_drag_n = 0.0
+    if handling:
+        last_soil_drag_n = SOIL.apply_ground_resistance(test_mass, surface_profile)
+        peak_soil_drag_n = maxf(peak_soil_drag_n, last_soil_drag_n)
     if elapsed >= 18.9 and not object_position_captured:
         object_start_position = test_mass.global_position
         object_position_captured = true
@@ -388,7 +446,10 @@ func _physics_process(delta: float) -> void:
             "%.3f" % rad_to_deg(_joint_angle("bucket")), str(ground_contact_count),
             "%.3f" % base_yaw_deg, "%.1f" % last_track_left_force_n,
             "%.1f" % last_track_right_force_n, "%.3f" % max_base_planar_displacement_m,
-            "%.3f" % object_displacement_m, "%.3f" % object_roll_deg
+            "%.3f" % object_displacement_m, "%.3f" % object_roll_deg,
+            "%.1f" % last_soil_drag_n, "%.2f" % float(hydraulic_state.get("flow_lpm", 0.0)),
+            "%.3f" % float(hydraulic_state.get("pressure_mpa", 0.0)),
+            "%.3f" % float(hydraulic_state.get("flow_scale", 1.0))
         ]))
     labels.text = "LANDWORKS | FREE-CHASSIS EXCAVATOR FIELD TEST\n"
     labels.text += "%s | %s | %.0f kg load | lift %+.2f m | slew %.1f°\n" % [case_name, phase, initial_payload_mass, height_change, slew_deg]
@@ -398,7 +459,11 @@ func _physics_process(delta: float) -> void:
     if handling:
         labels.text += "GROUND HANDLING: object movement %.2f m | drum spin %.1f deg\n" % [
             object_displacement_m, object_roll_deg]
-    labels.text += "Boom motor torque cap: %.0f kNm (assumed); real hydraulic circuits NOT simulated." % (BOOM_TORQUE_LIMIT_NM / 1000.0)
+    labels.text += "HYDRAULICS %.1f MPa | %.1f L/min | flow %.0f%% | ground %s" % [
+        float(hydraulic_state.get("pressure_mpa", 0.0)),
+        float(hydraulic_state.get("flow_lpm", 0.0)),
+        100.0 * float(hydraulic_state.get("flow_scale", 1.0)),
+        str(surface_profile["name"])]
     if elapsed >= TEST_END_S:
         _finish()
 
@@ -411,13 +476,16 @@ func _finish() -> void:
         f.store_csv_line(PackedStringArray(["scenario", "payload_kg", "peak_lift_m", "peak_drop_m", "hold_drift_m",
             "base_travel_m", "max_slew_deg", "max_chassis_tilt_deg", "tipping_detected",
             "max_base_yaw_deg", "base_planar_displacement_m",
-            "object_displacement_m", "object_roll_deg"]))
+            "object_displacement_m", "object_roll_deg", "peak_soil_drag_n",
+            "minimum_flow_scale", "peak_hydraulic_pressure_mpa", "peak_hydraulic_power_kw"]))
         f.store_csv_line(PackedStringArray([case_name, "%.0f" % initial_payload_mass,
             "%.3f" % peak_load_lift_m, "%.3f" % peak_load_drop_m, "%.3f" % hold_drift_m,
             "%.3f" % max_travel_m, "%.3f" % max_slew_deg, "%.3f" % peak_tilt_deg,
             str(int(tip_detected)), "%.3f" % max_base_yaw_deg,
             "%.3f" % max_base_planar_displacement_m,
-            "%.3f" % object_displacement_m, "%.3f" % object_roll_deg]))
+            "%.3f" % object_displacement_m, "%.3f" % object_roll_deg,
+            "%.2f" % peak_soil_drag_n, "%.3f" % minimum_flow_scale,
+            "%.3f" % peak_hydraulic_pressure_mpa, "%.3f" % peak_hydraulic_power_kw]))
         f.close()
     print("LANDWORKS_EXCAVATOR_TEST_COMPLETE ", case_name, " ", path)
     if batch:

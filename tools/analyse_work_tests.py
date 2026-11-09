@@ -4,7 +4,7 @@ import argparse
 import csv
 from pathlib import Path
 
-SCENARIOS=['flat_empty','flat_400','hill_400','hill_800','lift_250','lift_500','lift_1000','lift_pivot_500','drag_1000','push_1500','roll_1000']
+SCENARIOS=['flat_empty','flat_400','hill_400','hill_800','lift_250','lift_500','lift_1000','lift_pivot_500','drag_1000','push_1500','roll_1000','push_clay_1500','drag_clay_1000']
 
 def analyse(directory:Path) -> list[dict]:
     results=[]

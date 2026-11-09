@@ -1,6 +1,6 @@
 # Real Godot physics acceptance gates
 
-The CI runner executes eleven headless Godot 4.6.1 / Jolt scenarios and archives their original
+The CI runner executes thirteen headless Godot 4.6.1 / Jolt scenarios and archives their original
 measured telemetry. These acceptance checks run **after** the Godot process, so a passing
 Python source test cannot impersonate physical simulation.
 
@@ -59,3 +59,29 @@ The track-normal estimate now excludes grounded loads rather than
 granting the excavator extra driving grip simply because it is
 pushing or dragging a heavy object. The provisional 8.17 t
 machine-mass value excludes the load itself.
+
+
+## KX080-3 pump and soil response prototype
+
+The power-limited hydraulics approximation uses the KX080-3 service manual's
+**two 72 L/min main pump deliveries and 29.4 MPa relief pressure** as ceilings.
+The available 36 kW hydraulic engine power, effective cylinder area × lever arm,
+and flow per radian are **engineering estimates** to be calibrated. Joint
+velocity commands share limited pump flow; raised pressure reduces allowed flow
+to satisfy `P(kW) = p(MPa) × Q(L/min) / 60`. Godot Jolt still solves joint
+loads and actual mass acceleration. This is NOT a full cylinder/valve circuit,
+temperature, pump LS control, or calibrated hydraulic force model.
+
+The clay cases deliberately use Jolt ground/body collision plus additional
+rolling/sinkage resistance opposing actual body velocity. They change both
+track grip and object motion, never set object position. Surfaces represent
+compacted dirt versus soft silty clay; visual terrain is still a flat test
+plane with NO actual digging, ruts or mesh deformation.
+
+New cases: `push_clay_1500` and `drag_clay_1000`.
+The test includes peak estimated pressure, hydraulic power, and flow scaling
+in the real engine CSV files. These values are model telemetry, not hydraulic
+pressure gauge readings from a physical machine.
+
+Sources: KX080-3 workshop manual, hydraulic pump specifications,
+https://www.manualslib.com/manual/1335544/Kubota-Kx080-3.html?page=429.

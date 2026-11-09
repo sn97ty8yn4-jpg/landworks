@@ -25,6 +25,8 @@ CASE_SCENES={
     'drag_1000':'res://landworks/scenes/excavator_work_lab.tscn',
     'push_1500':'res://landworks/scenes/excavator_work_lab.tscn',
     'roll_1000':'res://landworks/scenes/excavator_work_lab.tscn',
+    'push_clay_1500':'res://landworks/scenes/excavator_work_lab.tscn',
+    'drag_clay_1000':'res://landworks/scenes/excavator_work_lab.tscn',
 }
 
 

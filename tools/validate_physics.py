@@ -14,8 +14,10 @@ import sys
 
 TRACTOR = ("flat_empty", "flat_400", "hill_400", "hill_800")
 EXCAVATOR = ("lift_250", "lift_500", "lift_1000", "lift_pivot_500",
-             "drag_1000", "push_1500", "roll_1000")
-GROUND_HANDLING = ("drag_1000", "push_1500", "roll_1000")
+             "drag_1000", "push_1500", "roll_1000",
+             "push_clay_1500", "drag_clay_1000")
+GROUND_HANDLING = ("drag_1000", "push_1500", "roll_1000",
+                   "push_clay_1500", "drag_clay_1000")
 SUMMARY_FIELDS = {
     "tractor": ("peak_kmh", "forward_distance_m", "brake_displacement_m",
                 "max_articulation_deg", "max_tilt_deg", "max_hitch_error_m", "tipped"),
@@ -136,7 +138,7 @@ def main() -> int:
         print(f"{case:13} {'FAIL' if failures else 'PASS':5} " + "; ".join(failures))
     if any(problems for _, problems in cases):
         return 1
-    print("All 11 measured behaviour gates passed (provisional thresholds; not OEM validation)")
+    print("All 13 measured behaviour gates passed (provisional thresholds; not OEM validation)")
     return 0
 
 

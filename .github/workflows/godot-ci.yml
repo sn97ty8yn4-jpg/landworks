@@ -63,6 +63,9 @@ jobs:
           set -o pipefail
           timeout 180s godot --headless --path . --editor --import 2>&1 | tee ci-logs/godot-import.log
 
+      - name: Validate hydraulic pump flow/pressure bounds in Godot
+        run: godot --headless --path . --script res://landworks/scripts/hydraulic_smoke.gd
+
       - name: Run and parse main yard
         shell: bash
         run: |
@@ -82,7 +85,7 @@ jobs:
           from pathlib import Path
           import csv
           base = Path("field_test_results")
-          cases = ["flat_empty","flat_400","hill_400","hill_800","lift_250","lift_500","lift_1000","lift_pivot_500","drag_1000","push_1500","roll_1000"]
+          cases = ["flat_empty","flat_400","hill_400","hill_800","lift_250","lift_500","lift_1000","lift_pivot_500","drag_1000","push_1500","roll_1000","push_clay_1500","drag_clay_1000"]
           for case in cases:
               typ = "excavator" if case.startswith(("lift_", "drag_", "push_", "roll_")) else "tractor"
               sample = base / f"{typ}_{case}_samples.csv"
