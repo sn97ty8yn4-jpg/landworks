@@ -22,8 +22,9 @@ SUMMARY_FIELDS = {
     "tractor": ("peak_kmh", "forward_distance_m", "brake_displacement_m",
                 "max_articulation_deg", "max_tilt_deg", "max_hitch_error_m", "tipped"),
     "excavator": ("peak_lift_m", "hold_drift_m", "base_travel_m", "max_slew_deg",
-                  "max_chassis_tilt_deg", "tipping_detected", "max_base_yaw_deg", 
-                  "base_planar_displacement_m"),
+                  "max_chassis_tilt_deg", "tipping_detected", "max_base_yaw_deg",
+                  "base_planar_displacement_m", "peak_hydraulic_pressure_mpa",
+                  "peak_hydraulic_power_kw", "minimum_flow_scale", "peak_soil_drag_n"),
 }
 FAILURES = "FAIL"
 
@@ -51,6 +52,15 @@ def read_summary(path: Path, typ: str) -> dict[str, float]:
 def check_case(case: str, r: dict[str, float]) -> list[str]:
     problems: list[str] = []
     if case.startswith(("lift_", "drag_", "push_", "roll_")):
+        if float(r.get("peak_hydraulic_pressure_mpa", 0.0)) > 29.41:
+            problems.append("hydraulic pressure exceeds main relief setting")
+        if float(r.get("peak_hydraulic_power_kw", 0.0)) > 36.05:
+            problems.append("hydraulic demand exceeds estimated engine-to-oil power")
+        if not 0.0 < float(r.get("minimum_flow_scale", 1.0)) <= 1.0001:
+            problems.append("invalid hydraulic flow allocation scale")
+        if case in ("drag_clay_1000", "push_clay_1500"):
+            if float(r.get("peak_soil_drag_n", 0.0)) < 400:
+                problems.append("soft clay profile did not produce soil resistance")
         if r["max_chassis_tilt_deg"] > 18 or r["tipping_detected"] > 0:
             problems.append("chassis instability")
         if r["hold_drift_m"] > 0.20:
@@ -122,6 +132,23 @@ def validate(directory: Path) -> list[tuple[str, list[str]]]:
                     raise ValueError(f"Nonfinite handling field {field} in {path}")
                 values[field] = value
         results.append((case, check_case(case, values)))
+    # Matched hardpack/clay test cases must produce genuinely different object
+    # motion in the physics solver; checking only that both move is insufficient.
+    def measured_distance(case_name: str) -> float:
+        path = directory / f"excavator_{case_name}_summary.csv"
+        with path.open(newline="", encoding="utf-8") as handle:
+            value = float(next(csv.DictReader(handle))["object_displacement_m"])
+        if not math.isfinite(value):
+            raise ValueError(f"Nonfinite object displacement in {path}")
+        return value
+    for hard, clay in (("drag_1000", "drag_clay_1000"),
+                       ("push_1500", "push_clay_1500")):
+        d_hard = measured_distance(hard)
+        d_clay = measured_distance(clay)
+        if d_clay >= d_hard * 0.90:
+            for scenario, failures in results:
+                if scenario == clay:
+                    failures.append(f"clay failed to reduce displacement by at least 10% compared with {hard}")
     return results
 
 

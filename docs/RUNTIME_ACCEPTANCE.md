@@ -81,7 +81,18 @@ plane with NO actual digging, ruts or mesh deformation.
 New cases: `push_clay_1500` and `drag_clay_1000`.
 The test includes peak estimated pressure, hydraulic power, and flow scaling
 in the real engine CSV files. These values are model telemetry, not hydraulic
-pressure gauge readings from a physical machine.
+pressure gauge readings from a physical machine. The estimator does not add the
+entire weight of grounded objects to the cylinder's suspended-load moment.
+Actual ground-contact push reaction still comes from the physical joint solver.
+
+The CI regression suite compares matched push and drag tests, requiring soft
+silty clay to reduce horizontal displacement by at least 10% relative to the
+hardpack case. It also rejects any test reporting pressure above 29.4 MPa or
+hydraulic power above the 36 kW model budget.
+
+The F9/F10 farmyard demonstrations run on hardpack by default; holding SHIFT
+while pressing F9 or F10 launches the clay versions. This is the *work lab*
+demonstration, not interactive voxel-based excavation.
 
 Sources: KX080-3 workshop manual, hydraulic pump specifications,
 https://www.manualslib.com/manual/1335544/Kubota-Kx080-3.html?page=429.

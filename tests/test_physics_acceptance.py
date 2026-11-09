@@ -74,6 +74,20 @@ class PhysicsAcceptanceTests(unittest.TestCase):
         stalled = dict(rolled, object_displacement_m=0.0)
         self.assertTrue(gate.check_case("roll_1000", stalled))
 
+    def test_hydraulic_bounds_and_clay_resistance(self):
+        good = {"peak_lift_m": 0.0, "hold_drift_m": 0.0,
+                "base_travel_m": 2.0, "max_slew_deg": 0,
+                "max_chassis_tilt_deg": 0, "tipping_detected": 0,
+                "max_base_yaw_deg": 0, "base_planar_displacement_m": 2,
+                "object_displacement_m": 1.4, "object_roll_deg": 0,
+                "peak_soil_drag_n": 2500,
+                "peak_hydraulic_pressure_mpa": 15,
+                "peak_hydraulic_power_kw": 18,
+                "minimum_flow_scale": 0.75}
+        self.assertEqual(gate.check_case("push_clay_1500", good), [])
+        good["peak_hydraulic_pressure_mpa"] = 31
+        self.assertTrue(any("hydraulic pressure" in x for x in gate.check_case("push_clay_1500", good)))
+
     def test_nonfinite_csv_cannot_pass(self):
         with tempfile.TemporaryDirectory() as d:
             path = Path(d) / "excavator_lift_250_summary.csv"

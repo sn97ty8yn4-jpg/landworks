@@ -128,13 +128,18 @@ func _process(_delta: float) -> void:
     var drag_demo := Input.is_key_pressed(KEY_F9)
     var push_demo := Input.is_key_pressed(KEY_F10)
     var roll_demo := Input.is_key_pressed(KEY_F11)
+    var soft_ground_demo := Input.is_key_pressed(KEY_SHIFT)
     var to_tow_work := Input.is_key_pressed(KEY_F7) or (selected == 0 and joy >= 0 and Input.is_joy_button_pressed(joy, JOY_BUTTON_DPAD_DOWN))
     var to_exc_work := Input.is_key_pressed(KEY_F8) or (selected == 1 and joy >= 0 and Input.is_joy_button_pressed(joy, JOY_BUTTON_DPAD_DOWN))
     var to_bench := Input.is_key_pressed(KEY_F5) or (joy >= 0 and Input.is_joy_button_pressed(joy, JOY_BUTTON_DPAD_LEFT))
     var to_lift := Input.is_key_pressed(KEY_F4) or (joy >= 0 and Input.is_joy_button_pressed(joy, JOY_BUTTON_DPAD_RIGHT))
     if (to_bench or to_lift or to_tow_work or to_exc_work or drag_demo or push_demo or roll_demo) and not scene_nav_latched:
         if drag_demo or push_demo or roll_demo:
-            var chosen := "drag_1000" if drag_demo else ("push_1500" if push_demo else "roll_1000")
+            var chosen := "roll_1000"
+            if drag_demo:
+                chosen = "drag_clay_1000" if soft_ground_demo else "drag_1000"
+            elif push_demo:
+                chosen = "push_clay_1500" if soft_ground_demo else "push_1500"
             get_tree().set_meta("landworks_work_scenario", chosen)
             get_tree().change_scene_to_file("res://landworks/scenes/excavator_work_lab.tscn")
             return
@@ -166,4 +171,5 @@ func _process(_delta: float) -> void:
         hud.text = "LANDWORKS 0.6  |  8-TON EXCAVATOR  |  JOINTS = VISUAL DEMO\n"
         hud.text += "PS: left stick boom  right stick dipper/bucket  L1/R1 slew  triggers crawl  △ switch\n"
         hud.text += "Keyboard: I/K boom  O/L stick  P/; bucket  Q/E slew  W/S tracks  TAB switch\n"
-        hud.text += "D-pad Down/F8: live lift trial | F9: drag 1t | F10: push 1.5t | F11: roll 1t"
+        hud.text += "D-pad Down/F8: live lift | F9: drag 1t | F10: push 1.5t | F11: roll 1t\n"
+        hud.text += "Hold SHIFT with F9/F10 to compare soft silty clay ground."

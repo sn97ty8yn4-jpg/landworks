@@ -342,11 +342,16 @@ func _drive_hydraulics(_delta: float) -> void:
     var hook: Vector3 = test_mass.global_position
     var boom_pin: Vector3 = boom.global_position
     var projected_reach := Vector2(hook.x - boom_pin.x, hook.z - boom_pin.z).length()
-    var payload_nm := initial_payload_mass * 9.81 * projected_reach
+    # Grounded loads are supported by the ground. They are NOT equivalent
+    # to a suspended dead weight acting through the boom. Actual push/drag
+    # reaction forces remain in the Jolt joint solver; force transducer /
+    # cylinder-pressure feedback is a future calibration step.
+    var suspended_kg := 0.0 if case_name in GROUND_HANDLING_CASES else initial_payload_mass
+    var payload_nm := suspended_kg * 9.81 * projected_reach
     var estimated := {
         "boom": 24000.0 + payload_nm,
-        "stick": 14000.0 + initial_payload_mass * 9.81 * 1.1,
-        "bucket": 6200.0 + initial_payload_mass * 9.81 * 0.3
+        "stick": 14000.0 + suspended_kg * 9.81 * 1.1,
+        "bucket": 6200.0 + suspended_kg * 9.81 * 0.3
     }
     hydraulic_state = HYD.allocate(speed_requests, limit_nm, estimated)
     minimum_flow_scale = minf(minimum_flow_scale, float(hydraulic_state["flow_scale"]))
