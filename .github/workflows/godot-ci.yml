@@ -92,6 +92,11 @@ jobs:
               print(case, "measured rows:", len(rows), "last time:", rows[-1].get("time_s"))
           PY
 
+      - name: Enforce measured physical behaviour (not just CSV presence)
+        shell: bash
+        run: |
+          python3 tools/validate_physics.py --dir "$GITHUB_WORKSPACE/field_test_results"
+
       - name: Archive actual Godot outputs (including failures)
         if: always()
         uses: actions/upload-artifact@v4
