@@ -113,7 +113,7 @@ func _physics_process(delta: float) -> void:
     if work_speed_limit_kmh > 0.0:
         rated_speed_kmh = minf(rated_speed_kmh, work_speed_limit_kmh)
     var pedal_speed_mps := throttle_request * rated_speed_kmh / 3.6
-    var engine_power_w := RATED_ENGINE_POWER_W * powf(engine_rpm / 2800.0, 1.6)
+    var engine_power_w := RATED_ENGINE_POWER_W * pow(engine_rpm / 2800.0, 1.6)
     var available_wheel_power_w := engine_power_w * hst_efficiency
     last_hst_power_kw = available_wheel_power_w / 1000.0
     var speed_mps := speed_kmh / 3.6
