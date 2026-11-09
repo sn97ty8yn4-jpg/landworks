@@ -1,0 +1,48 @@
+name: Earthworks - Fast physical machine coupling
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  earthworks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+      - name: Install Godot 4.6.1
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.6.1
+          use-dotnet: false
+          include-templates: false
+      - name: Import scripts and report errors
+        shell: bash
+        run: |
+          mkdir -p ci-earthworks
+          timeout 120s godot --headless --path . --editor --import 2>&1 | tee ci-earthworks/import.log
+          if grep -E 'SCRIPT ERROR:|Parse Error:|Failed to load script' ci-earthworks/import.log; then
+            exit 1
+          fi
+      - name: Test independent particle conservation
+        shell: bash
+        run: |
+          timeout 65s godot --headless --path . --script res://landworks/scripts/earthworks_smoke.gd 2>&1 | tee ci-earthworks/soil.log
+          grep 'EARTHWORKS PASS' ci-earthworks/soil.log
+      - name: Test physical excavator cutting and dumping
+        shell: bash
+        run: |
+          timeout 85s godot --headless --path . --script res://landworks/scripts/earthwork_machine_smoke.gd 2>&1 | tee ci-earthworks/machine.log
+          grep 'PHYSICAL_DIG PASS' ci-earthworks/machine.log
+      - name: Archive soil simulation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: earthworks-machine-telemetry
+          path: ci-earthworks/
+          retention-days: 30
