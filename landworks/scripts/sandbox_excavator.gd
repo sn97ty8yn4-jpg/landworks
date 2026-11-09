@@ -10,6 +10,40 @@ var scripted_test := false
 var test_clock := 0.0
 var slew_target_rad := 0.0
 var total_slew_command_deg := 0.0
+var attached_load: RigidBody3D
+var load_hook_joint: PinJoint3D
+
+func toggle_hook(candidates: Array[RigidBody3D]) -> String:
+    # Actual Jolt pin constraint, not a scripted lift or teleport. A heavy
+    # object may remain grounded while the machine pushes/pulls against it.
+    if is_instance_valid(load_hook_joint):
+        load_hook_joint.queue_free()
+        load_hook_joint = null
+        attached_load = null
+        return "Hook released"
+    var hook_world: Vector3 = bucket.to_global(Vector3(0, 0, -BUCKET_LENGTH))
+    var nearest: RigidBody3D
+    var nearest_distance := 1.6
+    for body in candidates:
+        if not is_instance_valid(body) or body == undercarriage or body == upper:
+            continue
+        var distance := hook_world.distance_to(body.global_position)
+        if distance < nearest_distance:
+            nearest = body
+            nearest_distance = distance
+    if nearest == null:
+        return "No loose load within 1.6 m of the bucket"
+    var joint := PinJoint3D.new()
+    joint.name = "SandboxPhysicalLoadHook"
+    add_child(joint)
+    joint.global_position = hook_world
+    joint.node_a = joint.get_path_to(bucket)
+    joint.node_b = joint.get_path_to(nearest)
+    joint.exclude_nodes_from_collision = true
+    load_hook_joint = joint
+    attached_load = nearest
+    return "Hooked %s: lifting torque still limits movement" % nearest.name
+
 
 func _ready() -> void:
     # Deliberately do NOT call the timed laboratory _ready(). It creates CSV

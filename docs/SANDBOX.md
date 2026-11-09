@@ -53,3 +53,14 @@ It writes CSVs measuring tractor travel, crawler travel, excavator joint
 rotation, trailer hitch separation, chassis stability, hydraulic pressure
 and free-crate displacement. The validator refuses incomplete or nonfinite
 results. These are regression checks, not a claim of Kubota OEM-level fidelity.
+
+
+## Ground-object lifting hook
+
+When operating the excavator, press **G / PlayStation Square** to attach
+a nearby free-standing object to the bucket tip with a real `PinJoint3D`.
+Press again to release it. No rigid body is teleported or given a scripted
+movement velocity. An overloaded object may remain on the ground while the
+excavator can still drag it or push against it. The prototype capture range
+is 1.6 m from hook to object centre. This is **not** a calibrated quick hitch,
+a flexible chain, an attachment safety device or a rated lift procedure.

@@ -24,6 +24,8 @@ var status: Label
 var active_machine := 0
 var toggle_down := false
 var legacy_down := false
+var hook_down := false
+var hook_status := "Press G / Square to hook the nearest loose object"
 var orbit_yaw := 0.25
 var smoke := false
 var smoke_time := 0.0
@@ -305,6 +307,12 @@ func _process(delta: float) -> void:
             return
         legacy_down = go_legacy
         var joy := CI.joy_id()
+        var hook_pressed := active_machine == 1 and (
+            Input.is_key_pressed(KEY_G) or
+            (joy >= 0 and Input.is_joy_button_pressed(joy, JOY_BUTTON_X)))
+        if hook_pressed and not hook_down:
+            hook_status = digger.toggle_hook(props)
+        hook_down = hook_pressed
         if active_machine == 0:
             orbit_yaw -= CI.axis(joy, JOY_AXIS_RIGHT_X) * delta * 1.4
         orbit_yaw += (float(Input.is_key_pressed(KEY_C)) -
@@ -327,6 +335,7 @@ func _process(delta: float) -> void:
     else:
         status.text += "EXC: W/S crawl A/D pivot | I/K boom O/L stick P/; bucket Q/E slew\n"
         status.text += "PS L stick tracks | R stick arm/bucket | R2/L2 boom | L1/R1 slew\n"
+        status.text += "G / Square hook: %s\n" % hook_status
         status.text += "Hydraulic %.1f MPa / %.1f Lpm | track contacts %d/4\n" % [
             float(digger.hydraulic_state.get("pressure_mpa", 0.0)),
             float(digger.hydraulic_state.get("flow_lpm", 0.0)), digger.ground_contact_count]
