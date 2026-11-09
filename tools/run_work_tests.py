@@ -22,6 +22,9 @@ CASE_SCENES={
     'lift_500':'res://landworks/scenes/excavator_work_lab.tscn',
     'lift_1000':'res://landworks/scenes/excavator_work_lab.tscn',
     'lift_pivot_500':'res://landworks/scenes/excavator_work_lab.tscn',
+    'drag_1000':'res://landworks/scenes/excavator_work_lab.tscn',
+    'push_1500':'res://landworks/scenes/excavator_work_lab.tscn',
+    'roll_1000':'res://landworks/scenes/excavator_work_lab.tscn',
 }
 
 
@@ -33,7 +36,7 @@ def validate_sample(path:Path, case:str) -> None:
     if len(rows)<80:
         raise RuntimeError(f'Incomplete physics samples for {case}: {len(rows)}')
     last=float(rows[-1]['time_s'])
-    if last < (31.9 if case.startswith('lift_') else 27.9):
+    if last < (31.9 if case.startswith(('lift_', 'drag_', 'push_', 'roll_')) else 27.9):
         raise RuntimeError(f'Test {case} ended early at {last:.2f}s')
 
 
@@ -52,7 +55,7 @@ def main() -> int:
     cases= list(CASE_SCENES) if a.case=='all' else [a.case]
     for case in cases:
         scene=CASE_SCENES[case]
-        prefix='excavator' if case.startswith('lift_') else 'tractor'
+        prefix='excavator' if case.startswith(('lift_', 'drag_', 'push_', 'roll_')) else 'tractor'
         summary=output/f'{prefix}_{case}_summary.csv'
         samples=output/f'{prefix}_{case}_samples.csv'
         for file in [summary,samples]:

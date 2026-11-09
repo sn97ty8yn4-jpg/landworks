@@ -1,6 +1,6 @@
 # Real Godot physics acceptance gates
 
-The CI runner executes seven headless Godot 4.6.1 / Jolt scenarios and archives their original
+The CI runner executes eleven headless Godot 4.6.1 / Jolt scenarios and archives their original
 measured telemetry. These acceptance checks run **after** the Godot process, so a passing
 Python source test cannot impersonate physical simulation.
 
@@ -33,3 +33,15 @@ They do not establish excavator safe working load, travel slope ratings, stabili
 real soil, or equivalence to the actual Kubota machines. When the model improves,
 these gates must be re-evaluated alongside OEM load charts, calibrated torque,
 fuel consumption, suspension settings, controller feedback and terrain.
+
+## Ground-contact material handling
+
+A 1000 kg grounded box is connected to the bucket hook and the machine tries to
+**drag** it. A free 1500 kg crate can be **pushed** by a steel bucket-toe contact
+shape. A free 1000 kg cylindrical drum can **roll** under the same bucket.
+All bodies use Godot Jolt collision forces and gravity. The scripts never set
+the objects' travel velocities or final positions. CI checks at least 0.4 m of
+horizontal object displacement; the cylinder must physically rotate at least
+45 degrees. The provisional friction values are not calibrated for soil rutting
+or ground disturbance. An object that fails to lift is still allowed to move
+horizontally when sufficient crawler force and ground contact are available.

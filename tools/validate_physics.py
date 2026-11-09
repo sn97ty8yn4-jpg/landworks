@@ -13,7 +13,9 @@ from pathlib import Path
 import sys
 
 TRACTOR = ("flat_empty", "flat_400", "hill_400", "hill_800")
-EXCAVATOR = ("lift_250", "lift_500", "lift_1000", "lift_pivot_500")
+EXCAVATOR = ("lift_250", "lift_500", "lift_1000", "lift_pivot_500",
+             "drag_1000", "push_1500", "roll_1000")
+GROUND_HANDLING = ("drag_1000", "push_1500", "roll_1000")
 SUMMARY_FIELDS = {
     "tractor": ("peak_kmh", "forward_distance_m", "brake_displacement_m",
                 "max_articulation_deg", "max_tilt_deg", "max_hitch_error_m", "tipped"),
@@ -46,12 +48,19 @@ def read_summary(path: Path, typ: str) -> dict[str, float]:
 
 def check_case(case: str, r: dict[str, float]) -> list[str]:
     problems: list[str] = []
-    if case.startswith("lift_"):
+    if case.startswith(("lift_", "drag_", "push_", "roll_")):
         if r["max_chassis_tilt_deg"] > 18 or r["tipping_detected"] > 0:
             problems.append("chassis instability")
         if r["hold_drift_m"] > 0.20:
             problems.append("load drifts during HOLD phase")
-        if case == "lift_1000":
+        if case in GROUND_HANDLING:
+            if r["object_displacement_m"] < 0.40:
+                problems.append("grounded object did not translate 0.4 m")
+            if case == "roll_1000" and r["object_roll_deg"] < 45:
+                problems.append("drum did not rotate 45 degrees")
+            if r["max_slew_deg"] > 15:
+                problems.append("uncommanded upper slew during ground handling")
+        elif case == "lift_1000":
             # At the CURRENT long-reach prototype geometry 1000 kg stalls.
             # The test driver must not slew or drive with a grounded load.
             # This is NOT a Kubota rated-load claim.
@@ -96,8 +105,20 @@ def check_case(case: str, r: dict[str, float]) -> list[str]:
 def validate(directory: Path) -> list[tuple[str, list[str]]]:
     results = []
     for case in (*TRACTOR, *EXCAVATOR):
-        typ = "excavator" if case.startswith("lift_") else "tractor"
-        values = read_summary(directory / f"{typ}_{case}_summary.csv", typ)
+        typ = "excavator" if case in EXCAVATOR else "tractor"
+        path = directory / f"{typ}_{case}_summary.csv"
+        values = read_summary(path, typ)
+        if case in GROUND_HANDLING:
+            with path.open(newline="", encoding="utf-8") as handle:
+                rec = next(csv.DictReader(handle))
+            for field in ("object_displacement_m", "object_roll_deg"):
+                try:
+                    value = float(rec[field])
+                except (KeyError, ValueError, TypeError) as exc:
+                    raise ValueError(f"Missing/bad handling field {field} in {path}") from exc
+                if not math.isfinite(value):
+                    raise ValueError(f"Nonfinite handling field {field} in {path}")
+                values[field] = value
         results.append((case, check_case(case, values)))
     return results
 
@@ -115,7 +136,7 @@ def main() -> int:
         print(f"{case:13} {'FAIL' if failures else 'PASS':5} " + "; ".join(failures))
     if any(problems for _, problems in cases):
         return 1
-    print("All 8 measured behaviour gates passed (provisional thresholds; not OEM validation)")
+    print("All 11 measured behaviour gates passed (provisional thresholds; not OEM validation)")
     return 0
 
 

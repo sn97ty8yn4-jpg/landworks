@@ -4,7 +4,9 @@
 extends "res://landworks/scripts/physical_excavator_lab.gd"
 
 const LOADS := {"lift_250": 250.0, "lift_500": 500.0, "lift_1000": 1000.0,
-    "lift_pivot_500": 500.0}
+    "lift_pivot_500": 500.0, "drag_1000": 1000.0,
+    "push_1500": 1500.0, "roll_1000": 1000.0}
+const GROUND_HANDLING_CASES := ["drag_1000", "push_1500", "roll_1000"]
 # Track traction is a contact-force proxy, NOT individual rubber belt dynamics.
 # 8170 kg includes chassis, carriage, boom, arm and bucket, excluding payload.
 const APPROX_DRY_GRASS_TRACK_MU := 0.56
@@ -29,6 +31,10 @@ var peak_load_lift_m := 0.0
 var peak_load_drop_m := 0.0
 var max_travel_m := 0.0
 var start_base_z := 0.0
+var object_start_position := Vector3.ZERO
+var object_position_captured := false
+var object_displacement_m := 0.0
+var object_roll_deg := 0.0
 var hold_height := 0.0
 var hold_drift_m := 0.0
 var settled_height := 0.0
@@ -71,7 +77,8 @@ func _ready() -> void:
     data_file.store_csv_line(PackedStringArray(["time_s", "case", "phase", "payload_kg",
         "payload_y_m", "load_lift_m", "base_z_m", "base_speed_kmh", "chassis_tilt_deg",
         "slew_deg", "boom_deg", "stick_deg", "bucket_deg", "ground_contacts", "base_yaw_deg", "left_track_force_n",
-        "right_track_force_n", "base_planar_displacement_m"]))
+        "right_track_force_n", "base_planar_displacement_m",
+        "object_displacement_m", "object_roll_deg"]))
 
 func _out(filename: String) -> String:
     return "user://" + filename if output_dir == "" else output_dir.path_join(filename)
@@ -149,6 +156,18 @@ func _build_machine() -> void:
     _make_hinge("bucket", stick, bucket, bucket_pin, Vector3.RIGHT,
         -1.0, 0.75, _motor_impulse(BUCKET_TORQUE_LIMIT_NM))
     var hook: Vector3 = bucket.to_global(Vector3(0, 0, -BUCKET_LENGTH))
+    var is_free_object := case_name == "push_1500" or case_name == "roll_1000"
+    if is_free_object:
+        # Real collision toe attached to the rigid bucket; contacts originate
+        # in Jolt and the load never receives scripted movement.
+        bucket.collision_mask = 3
+        var toe := CollisionShape3D.new()
+        var toe_shape := BoxShape3D.new()
+        toe_shape.size = Vector3(1.20, 0.94, 0.40)
+        toe.shape = toe_shape
+        toe.position = bucket.to_local(Vector3(0.48, 0.66, -6.18))
+        bucket.add_child(toe)
+        M.block(bucket, toe_shape.size, toe.position, Color("#444a4d"))
     test_mass = RigidBody3D.new()
     test_mass.name = "Suspended_Test_Load"
     test_mass.mass = initial_payload_mass
@@ -159,18 +178,55 @@ func _build_machine() -> void:
     add_child(test_mass)
     test_mass.global_position = hook + Vector3.DOWN * 0.52
     var load_col := CollisionShape3D.new()
-    var load_shape := BoxShape3D.new()
-    load_shape.size = Vector3(0.78, 0.56, 0.78)
-    load_col.shape = load_shape
     test_mass.add_child(load_col)
-    M.block(test_mass, load_shape.size, Vector3.ZERO, Color("#b0a892"))
-    var load_pin := PinJoint3D.new()
-    load_pin.name = "PhysicallyAttachedLoad"
-    add_child(load_pin)
-    load_pin.global_position = hook
-    load_pin.node_a = load_pin.get_path_to(bucket)
-    load_pin.node_b = load_pin.get_path_to(test_mass)
-    load_pin.exclude_nodes_from_collision = true
+    if case_name == "roll_1000":
+        # Free 1000 kg cylindrical drum oriented across the machine.
+        var drum := CylinderShape3D.new()
+        drum.radius = 0.62
+        drum.height = 1.25
+        load_col.shape = drum
+        load_col.rotation.z = PI * 0.5
+        test_mass.global_position = Vector3(0.48, 0.63, -7.10)
+        var drum_mesh := CylinderMesh.new()
+        drum_mesh.top_radius = 0.62
+        drum_mesh.bottom_radius = 0.62
+        drum_mesh.height = 1.25
+        var visible_drum := MeshInstance3D.new()
+        visible_drum.mesh = drum_mesh
+        visible_drum.rotation.z = PI * 0.5
+        var drum_mat := StandardMaterial3D.new()
+        drum_mat.albedo_color = Color("#626f74")
+        visible_drum.material_override = drum_mat
+        test_mass.add_child(visible_drum)
+    elif case_name == "push_1500":
+        var crate := BoxShape3D.new()
+        crate.size = Vector3(1.18, 1.26, 1.0)
+        load_col.shape = crate
+        test_mass.global_position = Vector3(0.48, 0.64, -7.10)
+        M.block(test_mass, crate.size, Vector3.ZERO, Color("#a58e71"))
+    else:
+        var load_shape := BoxShape3D.new()
+        load_shape.size = Vector3(0.78, 0.56, 0.78)
+        load_col.shape = load_shape
+        M.block(test_mass, load_shape.size, Vector3.ZERO, Color("#b0a892"))
+    if case_name in GROUND_HANDLING_CASES:
+        var surface := PhysicsMaterial.new()
+        surface.friction = 0.75 if case_name == "roll_1000" else 0.43
+        surface.rough = false
+        test_mass.physics_material_override = surface
+        test_mass.linear_damp = 0.03
+        test_mass.angular_damp = 0.08 if case_name == "roll_1000" else 0.18
+    if is_free_object:
+        # Free object collides with the bucket toe and ground, no hidden motor.
+        test_mass.collision_mask = 3
+    else:
+        var load_pin := PinJoint3D.new()
+        load_pin.name = "PhysicallyAttachedLoad"
+        add_child(load_pin)
+        load_pin.global_position = hook
+        load_pin.node_a = load_pin.get_path_to(bucket)
+        load_pin.node_b = load_pin.get_path_to(test_mass)
+        load_pin.exclude_nodes_from_collision = true
 
 func _relative_slew_rad() -> float:
     var rel: Basis = undercarriage.global_transform.basis.inverse() * upper.global_transform.basis
@@ -256,20 +312,21 @@ func _physics_process(delta: float) -> void:
         return
     elapsed += delta
     var phase := _test_phase()
-    # Smooth reference trajectory; powered physics hinges do the actual lifting.
-    var lift_frac := smoothstep(2.0, 10.0, elapsed)
+    # Handling keeps the bucket at its low initial pose; bodies can still
+    # push, drag or roll along the ground without being lifted clear.
+    var handling := case_name in GROUND_HANDLING_CASES
+    var lift_frac := 0.0 if handling else smoothstep(2.0, 10.0, elapsed)
     target_angles["boom"] = 0.24 + 0.48 * lift_frac
     target_angles["stick"] = -0.72 + 0.10 * lift_frac
     target_angles["bucket"] = -0.24 - 0.12 * lift_frac
     for id in ["boom", "stick", "bucket"]:
         _drive_joint(id, delta)
-    # The automated field-trial operator must not attempt to drive away
-    # towing a grounded load that failed to lift. This interlock applies to
-    # the SCRIPTED TEST only; it is not a real-machine load limiter.
+    # Explicit ground handling does NOT depend on lifting capability.
+    # The separate failed-lift test remains stationary by test design.
     var carry_authorised := peak_load_lift_m > 0.50
-    var requested_slew := 1.20 * smoothstep(13.0, 19.0, elapsed)
+    var requested_slew := 0.0 if handling else 1.20 * smoothstep(13.0, 19.0, elapsed)
     _control_slew(requested_slew if carry_authorised else 0.0)
-    if elapsed >= 19.0 and elapsed < 26.0 and carry_authorised:
+    if elapsed >= 19.0 and elapsed < 26.0 and (handling or carry_authorised):
         if case_name == "lift_pivot_500":
             _drive_tracks(-0.55, 0.55)
         else:
@@ -280,6 +337,15 @@ func _physics_process(delta: float) -> void:
     var tip_angle := rad_to_deg(acos(clampf(up.dot(Vector3.UP), -1.0, 1.0)))
     peak_tilt_deg = maxf(peak_tilt_deg, tip_angle)
     tip_detected = tip_detected or tip_angle > 20.0
+    if elapsed >= 18.9 and not object_position_captured:
+        object_start_position = test_mass.global_position
+        object_position_captured = true
+    if object_position_captured:
+        var xy_now := Vector2(test_mass.global_position.x, test_mass.global_position.z)
+        var xy_start := Vector2(object_start_position.x, object_start_position.z)
+        object_displacement_m = maxf(object_displacement_m, xy_now.distance_to(xy_start))
+    if case_name == "roll_1000" and elapsed >= 19.0 and elapsed < 26.0:
+        object_roll_deg += rad_to_deg(absf(test_mass.angular_velocity.dot(Vector3.RIGHT))) * delta
     var height_change := test_mass.global_position.y - settled_height
     peak_load_lift_m = maxf(peak_load_lift_m, height_change)
     peak_load_drop_m = minf(peak_load_drop_m, height_change)
@@ -309,13 +375,17 @@ func _physics_process(delta: float) -> void:
             "%.3f" % rad_to_deg(_joint_angle("stick")),
             "%.3f" % rad_to_deg(_joint_angle("bucket")), str(ground_contact_count),
             "%.3f" % base_yaw_deg, "%.1f" % last_track_left_force_n,
-            "%.1f" % last_track_right_force_n, "%.3f" % max_base_planar_displacement_m
+            "%.1f" % last_track_right_force_n, "%.3f" % max_base_planar_displacement_m,
+            "%.3f" % object_displacement_m, "%.3f" % object_roll_deg
         ]))
     labels.text = "LANDWORKS | FREE-CHASSIS EXCAVATOR FIELD TEST\n"
     labels.text += "%s | %s | %.0f kg load | lift %+.2f m | slew %.1f°\n" % [case_name, phase, initial_payload_mass, height_change, slew_deg]
     labels.text += "Base tilt %.1f° | travel %.2f m | track contacts %d/4\n" % [tip_angle, max_travel_m, ground_contact_count]
-    if not carry_authorised and elapsed > 10.0:
-        labels.text += "TEST OPERATOR: LIFT FAILED — NO SLEW/TRAVEL COMMAND\n"
+    if not carry_authorised and not handling and elapsed > 10.0:
+        labels.text += "FAILED LIFT TEST — NO AUTOMATIC TRAVEL\n"
+    if handling:
+        labels.text += "GROUND HANDLING: object movement %.2f m | drum spin %.1f deg\n" % [
+            object_displacement_m, object_roll_deg]
     labels.text += "Boom motor torque cap: %.0f kNm (assumed); real hydraulic circuits NOT simulated." % (BOOM_TORQUE_LIMIT_NM / 1000.0)
     if elapsed >= TEST_END_S:
         _finish()
@@ -328,12 +398,14 @@ func _finish() -> void:
     if f != null:
         f.store_csv_line(PackedStringArray(["scenario", "payload_kg", "peak_lift_m", "peak_drop_m", "hold_drift_m",
             "base_travel_m", "max_slew_deg", "max_chassis_tilt_deg", "tipping_detected",
-            "max_base_yaw_deg", "base_planar_displacement_m"]))
+            "max_base_yaw_deg", "base_planar_displacement_m",
+            "object_displacement_m", "object_roll_deg"]))
         f.store_csv_line(PackedStringArray([case_name, "%.0f" % initial_payload_mass,
             "%.3f" % peak_load_lift_m, "%.3f" % peak_load_drop_m, "%.3f" % hold_drift_m,
             "%.3f" % max_travel_m, "%.3f" % max_slew_deg, "%.3f" % peak_tilt_deg,
             str(int(tip_detected)), "%.3f" % max_base_yaw_deg,
-            "%.3f" % max_base_planar_displacement_m]))
+            "%.3f" % max_base_planar_displacement_m,
+            "%.3f" % object_displacement_m, "%.3f" % object_roll_deg]))
         f.close()
     print("LANDWORKS_EXCAVATOR_TEST_COMPLETE ", case_name, " ", path)
     if batch:
