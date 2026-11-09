@@ -1,5 +1,5 @@
-# Stage 1: independently driven, gravity-affected RigidBody3D on four force-based
-# raycast tyre contacts. Not yet a calibrated B7100 drivetrain model.
+# B7100 HST rigid-body prototype with raycast tyres and a power-constrained
+# hydrostatic pump/motor response. This is a physics approximation, not an OEM HST model.
 extends RigidBody3D
 
 const M = preload("res://landworks/scripts/mesh_factory.gd")
@@ -20,6 +20,16 @@ var body_visual: Node3D
 var speed_kmh: float = 0.0
 var steer_request: float = 0.0
 var throttle_request: float = 0.0
+# Engine throttle lever is independent of hydrostatic travel pedal. 2800 rpm
+# and 11.7 kW are B7100HST D750-A published ratings; ratio losses and
+# response gains below are provisional, not OEM calibration.
+@export_range(900.0, 2800.0, 50.0) var engine_rpm := 2800.0
+@export_enum("Low:1", "High:2") var hst_range := 2
+@export_range(0.45, 0.90, 0.01) var hst_efficiency := 0.72
+var last_requested_hst_force_n := 0.0
+var last_hst_power_limit_n := 0.0
+var last_hst_power_kw := 0.0
+var tyre_grip_utilisation := 0.0
 
 # Approximate compact tractor parameters. Adjust using real dimensions and test data.
 const VEHICLE_MASS := 573.0
@@ -29,6 +39,11 @@ const DAMPER_RATE := 4600.0
 const GROUND_MU := 0.86
 const MAX_STEER := 0.50
 const DRIVE_FORCE := 4250.0
+const RATED_ENGINE_POWER_W := 11700.0
+const HST_LOW_MAX_KMH := 5.7
+const HST_HIGH_MAX_KMH := 14.5
+const HST_SPEED_GAIN_N_PER_MPS := 3800.0
+const HST_HYDRAULIC_BRAKING_N := 1850.0
 
 func _ready() -> void:
     mass = VEHICLE_MASS
@@ -89,10 +104,31 @@ func _physics_process(delta: float) -> void:
     steer_request = move_toward(steer_request, target_steer, delta * 2.8)
     var forward := -global_transform.basis.z
     speed_kmh = linear_velocity.dot(forward) * 3.6
-    var driven_throttle := throttle_request
-    if work_speed_limit_kmh > 0.0 and absf(speed_kmh) > 0.0:
-        if signf(throttle_request) == signf(speed_kmh):
-            driven_throttle *= clampf((work_speed_limit_kmh - absf(speed_kmh)) / 2.0, 0.0, 1.0)
+    # Swashplate pedal requests travel speed, not engine torque. Available
+    # wheel force decreases with speed according to the finite diesel power.
+    # At zero pedal, hydrostatic resistance decelerates rather than instantly
+    # freezing the physics body's velocity.
+    var rated_speed_kmh := HST_LOW_MAX_KMH if hst_range == 1 else HST_HIGH_MAX_KMH
+    rated_speed_kmh *= engine_rpm / 2800.0
+    if work_speed_limit_kmh > 0.0:
+        rated_speed_kmh = minf(rated_speed_kmh, work_speed_limit_kmh)
+    var pedal_speed_mps := throttle_request * rated_speed_kmh / 3.6
+    var engine_power_w := RATED_ENGINE_POWER_W * powf(engine_rpm / 2800.0, 1.6)
+    var available_wheel_power_w := engine_power_w * hst_efficiency
+    last_hst_power_kw = available_wheel_power_w / 1000.0
+    var speed_mps := speed_kmh / 3.6
+    last_hst_power_limit_n = minf(DRIVE_FORCE,
+        available_wheel_power_w / maxf(absf(speed_mps), 0.70))
+    var speed_error := pedal_speed_mps - speed_mps
+    var requested_force := speed_error * HST_SPEED_GAIN_N_PER_MPS
+    # Pump flow near zero pedal gives braking/holding, not reverse drive power.
+    var drive_limit := last_hst_power_limit_n
+    if absf(speed_error) > 0.01 and absf(pedal_speed_mps) < absf(speed_mps):
+        drive_limit = minf(drive_limit, HST_HYDRAULIC_BRAKING_N)
+    if absf(throttle_request) < 0.03:
+        drive_limit = minf(drive_limit, HST_HYDRAULIC_BRAKING_N)
+    last_requested_hst_force_n = clampf(requested_force, -drive_limit, drive_limit)
+    tyre_grip_utilisation = 0.0
     for i in range(wheel_data.size()):
         var wheel: Dictionary = wheel_data[i]
         var mount: Vector3 = wheel["mount"]
@@ -122,13 +158,20 @@ func _physics_process(delta: float) -> void:
             var longitudinal_speed := point_velocity.dot(wheel_forward)
             var lateral_speed := point_velocity.dot(wheel_right)
             var wheel_drive: float = wheel["drive_share"]
-            var traction := driven_throttle * DRIVE_FORCE * wheel_drive * 0.5
+            var traction := last_requested_hst_force_n * wheel_drive * 0.5
             # Rolling resistance & engine braking, plus active reverse / forward input.
             traction -= longitudinal_speed * (125.0 + benchmark_brake * 1100.0)
             var lateral := clampf(-lateral_speed * VEHICLE_MASS * 2.2,
                 -friction_limit, friction_limit)
-            traction = clampf(traction, -friction_limit, friction_limit)
-            apply_force(wheel_forward * traction + wheel_right * lateral, relative)
+            # A tyre has one shared friction budget for longitudinal drive and
+            # lateral cornering; independent clamping permitted sqrt(2)*mu loads.
+            var combined := Vector2(traction, lateral)
+            var demand_magnitude := combined.length()
+            var limit := maxf(friction_limit, 0.01)
+            tyre_grip_utilisation = maxf(tyre_grip_utilisation, demand_magnitude / limit)
+            if demand_magnitude > limit:
+                combined *= limit / demand_magnitude
+            apply_force(wheel_forward * combined.x + wheel_right * combined.y, relative)
             visual.rotation.x += longitudinal_speed / maxf(rad, 0.1) * delta
         root.position = mount - Vector3(0, REST_TRAVEL - compression, 0)
     # Resist yaw only weakly when underway; wheels supply the actual turn force.
