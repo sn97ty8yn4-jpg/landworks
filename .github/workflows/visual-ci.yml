@@ -38,6 +38,10 @@ jobs:
           set -o pipefail
           timeout 85s godot --headless --path . --script res://landworks/scripts/work_pad_access_smoke.gd 2>&1 | tee ci-visuals/access.log
           grep 'WORK_PAD_ACCESS PASS' ci-visuals/access.log
+          if grep -E 'SCRIPT ERROR:|Parse Error:|Failed to load script|Invalid type in function' ci-visuals/access.log; then
+            echo "::error::Play-mode runtime GDScript failed in access test"
+            exit 1
+          fi
       - name: Install Mesa software renderer
         shell: bash
         run: |
@@ -51,6 +55,10 @@ jobs:
           set -o pipefail
           timeout 120s xvfb-run -a godot --path . --rendering-method gl_compatibility --script res://landworks/scripts/visual_snapshot.gd -- --preview-dir="$GITHUB_WORKSPACE/ci-visuals" 2>&1 | tee ci-visuals/render.log
           grep 'RENDERED_FRAME_OK' ci-visuals/render.log
+          if grep -E 'SCRIPT ERROR:|Parse Error:|Failed to load script|Invalid type in function' ci-visuals/render.log; then
+            echo "::error::Visual render contains GDScript runtime errors"
+            exit 1
+          fi
           python3 - <<'PY'
           from pathlib import Path
           import struct

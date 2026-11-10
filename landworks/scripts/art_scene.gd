@@ -167,12 +167,19 @@ func _distant_hills() -> void:
     # Ring-like illustrated hills well beyond the physical 140m yard.
     var colors := [Color("#526d59"),Color("#6c835e"),
         Color("#7f936a"),Color("#a0aa80")]
+    var hill_materials: Array[Material] = []
+    for tint in colors:
+        var paint := StandardMaterial3D.new()
+        paint.albedo_color = tint
+        paint.roughness = 1.0
+        paint.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
+        hill_materials.append(paint)
     for n in range(17):
         var x := -115.0 + float(n) * 15.0
         var z := -79.0 + float(n % 3) * 6.0
         var rise := 19.0 + 7.0 * sin(float(n) * 1.17)
         _ball(self,Vector3(x,-7.5,z),
-            Vector3(26.0,rise,21.0),colors[n%colors.size()])
+            Vector3(26.0,rise,21.0),hill_materials[n%hill_materials.size()])
     var village := Node3D.new()
     village.name = "Hillside_Village"
     village.position = Vector3(-21.0,5.2,-75.0)
