@@ -189,7 +189,7 @@ func _hill_ridge(name: String, z_depth: float, base: float, relief: float,
             for v in [last_foot,crest,last, last_foot,foot,crest]:
                 points.append(v)
                 normals.append(Vector3(0,0,1))
-                var above := v.y > -4.0
+                var above: bool = (v as Vector3).y > -4.0
                 vertex_colour.append(colour.lightened(0.14) if above
                     else colour.darkened(0.17))
         at = x
