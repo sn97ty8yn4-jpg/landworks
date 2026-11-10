@@ -19,6 +19,7 @@ var cylinders: Array[Dictionary] = []
 var parts_count := 0
 var glass_mat: StandardMaterial3D
 var metal_mat: StandardMaterial3D
+var ink_mat: ShaderMaterial
 
 func attach_to(tractor_machine: RigidBody3D, digger: Node3D) -> void:
     tractor = tractor_machine
@@ -36,9 +37,28 @@ func _paint(color: Color, metallic: float = 0.0,
     material.metallic = metallic
     material.roughness = roughness
     material.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
+    if ink_mat != null:
+        material.next_pass = ink_mat
     return material
 
 func _init_materials() -> void:
+    # A thin silhouette pass gives Kubota chassis, tracks, arm and teeth a
+    # coherent ink-edged 2.5D animated-film treatment.
+    var ink_shader := Shader.new()
+    ink_shader.code = """
+shader_type spatial;
+render_mode unshaded, cull_front, depth_draw_opaque;
+uniform vec4 ink_color : source_color = vec4(0.13,0.14,0.14,1.0);
+uniform float line_width = 0.012;
+void vertex() {
+    VERTEX += NORMAL * line_width;
+}
+void fragment() {
+    ALBEDO = ink_color.rgb;
+}
+"""
+    ink_mat = ShaderMaterial.new()
+    ink_mat.shader = ink_shader
     glass_mat = _paint(Color("#7fadb1"), 0.12, 0.18)
     glass_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
     glass_mat.albedo_color.a = 0.46
@@ -50,7 +70,7 @@ func _box(parent: Node3D, size: Vector3, p: Vector3,
     var m := BoxMesh.new()
     m.size = size
     n.mesh = m
-    n.material_override = _paint(color)
+    n.material_override = glass_mat if color == GLASS else _paint(color)
     n.position = p
     n.rotation = rotation
     parent.add_child(n)
