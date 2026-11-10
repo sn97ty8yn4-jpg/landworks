@@ -309,12 +309,29 @@ func _make_instanced(mesh: Mesh, colors: Array[Color],
 
 func _ground_detail() -> void:
     var blades := _blade_mesh()
-    var blade_mat := StandardMaterial3D.new()
-    blade_mat.vertex_color_use_as_albedo = true
-    blade_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-    blade_mat.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
-    blade_mat.roughness = 1.0
-    blades.surface_set_material(0, blade_mat)
+    # GPU wind bends only upper blade vertices, with a phase offset for
+    # each instanced clump. The ground roots stay fixed.
+    var wind := Shader.new()
+    wind.code = """
+shader_type spatial;
+render_mode cull_disabled, diffuse_toon, specular_disabled;
+void vertex() {
+    vec3 instance_world = (MODEL_MATRIX * vec4(0.0,0.0,0.0,1.0)).xyz;
+    float wave = sin(TIME * 1.45 + instance_world.x * 0.57 +
+        instance_world.z * 0.43);
+    float gust = sin(TIME * 0.33 + instance_world.x * 0.094) * 0.035;
+    float height = max(0.0,VERTEX.y);
+    VERTEX.x += height * (wave * 0.075 + gust);
+    VERTEX.z += height * cos(TIME * 1.04 + instance_world.z*0.52)*0.032;
+}
+void fragment() {
+    ALBEDO = COLOR.rgb;
+    ROUGHNESS = 1.0;
+}
+"""
+    var wind_material := ShaderMaterial.new()
+    wind_material.shader = wind
+    blades.surface_set_material(0,wind_material)
     var grass_positions: Array[Vector3] = []
     for i in range(11500):
         var x := rng.randf_range(-64.0,64.0)
@@ -381,6 +398,16 @@ func _clouds() -> void:
                 rng.randf_range(2.4,4.0),rng.randf_range(2.6,4.6)),
                 _p("white"))
         cloud_nodes.append(cloud)
+
+func _process(delta: float) -> void:
+    # Slow drifting atmospheric backdrop. Pure visual transforms never
+    # touch machine, payload or soil physics state.
+    for cloud in cloud_nodes:
+        if not is_instance_valid(cloud):
+            continue
+        cloud.position.x += delta * 0.21
+        if cloud.position.x > 106.0:
+            cloud.position.x = -106.0
 
 func _digging_site_details() -> void:
     # Stakes and track imprints are only meshes, so they cannot block entry
