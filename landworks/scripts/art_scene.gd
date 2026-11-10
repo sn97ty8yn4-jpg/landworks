@@ -163,35 +163,73 @@ void fragment() {
     add_child(node)
     scenery_count += 1
 
+# Organic multi-depth ridge silhouettes, rather than giant ellipsoids.
+# Procedural geometry has no collisions, no runtime recomputation and
+# does not interfere with the camera or the excavation heightfield.
+func _hill_ridge(name: String, z_depth: float, base: float, relief: float,
+        phase: float, colour: Color) -> void:
+    var points := PackedVector3Array()
+    var normals := PackedVector3Array()
+    var vertex_colour := PackedColorArray()
+    var at := -148.0
+    for index in range(100):
+        var x := -148.0 + float(index) * 3.0
+        var t := x * 0.034 + phase
+        var y := base + relief * (
+            0.46 * sin(t) + 0.33 * cos(t * 1.83 + 0.45) +
+            0.19 * sin(t * 3.2 - phase * 0.4))
+        var crest := Vector3(x, maxf(1.5, y), z_depth)
+        var foot := Vector3(x, -21.0, z_depth)
+        if index > 0:
+            var last: Vector3 = Vector3(at, maxf(1.5, base + relief * (
+                0.46 * sin(at * 0.034 + phase) +
+                0.33 * cos((at * 0.034 + phase)*1.83+0.45) +
+                0.19 * sin((at * 0.034 + phase)*3.2-phase*0.4))), z_depth)
+            var last_foot := Vector3(at,-21.0,z_depth)
+            for v in [last_foot,crest,last, last_foot,foot,crest]:
+                points.append(v)
+                normals.append(Vector3(0,0,1))
+                var above := v.y > -4.0
+                vertex_colour.append(colour.lightened(0.14) if above
+                    else colour.darkened(0.17))
+        at = x
+    var arrays := []
+    arrays.resize(Mesh.ARRAY_MAX)
+    arrays[Mesh.ARRAY_VERTEX] = points
+    arrays[Mesh.ARRAY_NORMAL] = normals
+    arrays[Mesh.ARRAY_COLOR] = vertex_colour
+    var mesh := ArrayMesh.new()
+    mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+    var mat := StandardMaterial3D.new()
+    mat.vertex_color_use_as_albedo = true
+    mat.roughness = 1.0
+    mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+    var item := MeshInstance3D.new()
+    item.name = name
+    item.mesh = mesh
+    item.material_override = mat
+    add_child(item)
+    scenery_count += 1
+
 func _distant_hills() -> void:
-    # Ring-like illustrated hills well beyond the physical 140m yard.
-    var colors := [Color("#526d59"),Color("#6c835e"),
-        Color("#7f936a"),Color("#a0aa80")]
-    var hill_materials: Array[Material] = []
-    for tint in colors:
-        var paint := StandardMaterial3D.new()
-        paint.albedo_color = tint
-        paint.roughness = 1.0
-        paint.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
-        hill_materials.append(paint)
-    for n in range(17):
-        var x := -115.0 + float(n) * 15.0
-        var z := -79.0 + float(n % 3) * 6.0
-        var rise := 19.0 + 7.0 * sin(float(n) * 1.17)
-        _ball(self,Vector3(x,-7.5,z),
-            Vector3(26.0,rise,21.0),hill_materials[n%hill_materials.size()])
+    _hill_ridge("FarBlueGreenRidge",-131.0,12.0,14.0,0.45,Color("#92ada6"))
+    _hill_ridge("MiddleOliveRidge",-105.0,10.3,12.0,1.63,Color("#76947d"))
+    _hill_ridge("NearbyWoodedRidge",-82.0,6.4,8.4,3.35,Color("#5d805d"))
+    # Small terracotta-roofed hill village: the impression of rural scale,
+    # outside the actual 140m physical world boundary.
     var village := Node3D.new()
     village.name = "Hillside_Village"
-    village.position = Vector3(-21.0,5.2,-75.0)
+    village.position = Vector3(-21.0,6.4,-76.0)
     add_child(village)
     for i in range(8):
         var x := -13.0 + float(i) * 3.7
         var y := 3.5 + float(i%3)*1.10
-        _box(village,Vector3(2.65,y,2.50),
-            Vector3(x,y*0.5,0),_p("white"))
-        _box(village,Vector3(3.0,0.32,2.8),
-            Vector3(x,y+0.22,0),_p("clay"),
-            Vector3(0,0,deg_to_rad(14 if i%2==0 else -14)))
+        _box(village,Vector3(2.65,y,2.50),Vector3(x,y*0.5,0),
+            _p("white"))
+        _box(village,Vector3(3.0,0.32,2.8),Vector3(x,y+0.22,0),
+            _p("clay"),Vector3(0,0,deg_to_rad(
+                14.0 if i%2==0 else -14.0)))
     _box(village,Vector3(1.40,9.2,1.70),
         Vector3(4.5,5.2,0.25),_p("earth_light"))
     _box(village,Vector3(1.90,0.8,2.0),
@@ -209,11 +247,20 @@ func _farm_buildings() -> void:
         _box(b, Vector3(0.21, 4.8, 0.30), Vector3(x, 2.42, -3.86), _p("timber"))
     for y in [1.0, 2.2, 3.5, 4.5]:
         _box(b, Vector3(10.2, 0.19, 0.31), Vector3(0,y,-3.82), _p("earth_light"))
-    # Shingled gable with actual inclined panels. No collision is needed.
-    _box(b, Vector3(5.9, 0.27, 8.2), Vector3(-2.58, 5.31, 0),
-        _p("tin"), Vector3(0,0,deg_to_rad(-26)))
-    _box(b, Vector3(5.9, 0.27, 8.2), Vector3(2.58, 5.31, 0),
-        _p("tin"), Vector3(0,0,deg_to_rad(26)))
+    # A proper joined gable (previous roof panels formed a floating V).
+    # The ridge is high at the centre, eaves meet the wall at x=+/-5.
+    _box(b,Vector3(5.25,0.22,8.2),Vector3(-2.46,5.44,0),
+        _p("tin"),Vector3(0,0,deg_to_rad(20.0)))
+    _box(b,Vector3(5.25,0.22,8.2),Vector3(2.46,5.44,0),
+        _p("tin"),Vector3(0,0,deg_to_rad(-20.0)))
+    for side in [-1.0,1.0]:
+        for i in range(8):
+            var roof_x := float(side)*(0.44+float(i)*0.62)
+            var roof_y := 6.28-absf(roof_x)*0.363
+            _box(b,Vector3(0.023,0.045,8.1),
+                Vector3(roof_x,roof_y,0),_p("earth_light"))
+    _pole(b,Vector3(0,6.41,-4.1),Vector3(0,6.41,4.1),
+        0.065,_p("tin"))
     for x in [-4.8, 4.8]:
         for z in [-3.6, 3.6]:
             _pole(b, Vector3(x,0,z), Vector3(x,5.0,z), 0.15, _p("earth_light"))
