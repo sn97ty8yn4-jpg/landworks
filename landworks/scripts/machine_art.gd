@@ -292,21 +292,35 @@ func _dress_excavator() -> void:
                     1.39+float(n)*0.035,0.71),TRACK_EDGE)
         _label(upper,"KX080-3",Vector3(xside*1.02,1.91,0.28),
             Vector3(0,-PI*0.5 if side<0 else PI*0.5,0),0.0032)
-    # Operator cab left side with dark frame, segmented glass and roof beacon.
-    _box(upper,Vector3(0.88,1.36,1.16),
-        Vector3(-0.49,2.22,-0.34),DARK)
-    _box(upper,Vector3(0.83,0.92,1.07),
-        Vector3(-0.49,2.36,-0.34),GLASS)
-    _box(upper,Vector3(0.82,0.91,0.12),
-        Vector3(-0.49,2.34,-0.93),DARK)
-    _box(upper,Vector3(0.73,0.79,0.023),
-        Vector3(-0.49,2.36,-1.00),GLASS)
-    _box(upper,Vector3(0.94,0.16,1.23),
-        Vector3(-0.49,2.95,-0.34),TRACTOR_ORANGE)
-    _box(upper,Vector3(0.05,1.05,1.15),
-        Vector3(-0.94,2.27,-0.34),DARK)
-    _box(upper,Vector3(0.012,0.85,0.98),
-        Vector3(-0.965,2.38,-0.34),GLASS)
+    # Real open-window cab rather than a solid opaque cuboid. The prior
+    # enclosed DARK box completely obscured the tinted panes and operator.
+    # Pillars/rails visually frame four translucent windows around the seat.
+    _box(upper,Vector3(0.96,0.15,1.25),
+        Vector3(-0.49,1.66,-0.35),DARK)  # floor
+    _box(upper,Vector3(0.95,0.29,1.20),
+        Vector3(-0.49,1.83,-0.35),TRACK_EDGE)  # lower scuttle
+    for x in [-0.925,-0.055]:
+        for z in [-0.90,0.21]:
+            _box(upper,Vector3(0.064,1.02,0.065),
+                Vector3(x,2.47,z),DARK)
+        # Front-to-back horizontal cab surround above the glazing.
+        _box(upper,Vector3(0.072,0.07,1.20),
+            Vector3(x,2.96,-0.35),DARK)
+    for z in [-0.92,0.23]:
+        _box(upper,Vector3(0.94,0.07,0.073),
+            Vector3(-0.49,2.96,z),DARK)
+    # Windscreen, rear screen, full left door glass and right window.
+    for z in [-0.938,0.246]:
+        _box(upper,Vector3(0.77,0.82,0.018),
+            Vector3(-0.49,2.48,z),GLASS)
+    for x in [-0.962,-0.021]:
+        _box(upper,Vector3(0.018,0.84,1.05),
+            Vector3(x,2.48,-0.35),GLASS)
+    # Sliding-door centre mullion and rain edge.
+    _box(upper,Vector3(0.057,0.90,0.046),
+        Vector3(-0.976,2.46,-0.30),DARK)
+    _box(upper,Vector3(0.98,0.145,1.28),
+        Vector3(-0.49,3.04,-0.35),TRACTOR_ORANGE)
     for pos in [Vector3(-0.17,2.96,-0.90),Vector3(-0.82,2.96,-0.90)]:
         _box(upper,Vector3(0.24,0.17,0.16),pos,LIGHT)
     _excavator_operator(upper)
