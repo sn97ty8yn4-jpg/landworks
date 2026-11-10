@@ -294,6 +294,10 @@ func _build_ui() -> void:
 
 func _select_machine(which: int) -> void:
     active_machine = which
+    # Switch to the left-front quarter when operating the excavator: it
+    # shows its boom silhouette, side cab glazing and seated driver,
+    # instead of an almost opaque rear counterweight.
+    orbit_yaw = 0.72 if which == 0 else -0.94
     tractor.controlled = which == 0 and not smoke
     digger.operated = which == 1 and not smoke
 
