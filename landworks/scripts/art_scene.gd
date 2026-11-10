@@ -18,6 +18,7 @@ func _ready() -> void:
     rng.seed = 7100803
     _init_palette()
     _painted_ground()
+    _distant_hills()
     _farm_buildings()
     _wooden_fence()
     _make_trees()
@@ -143,6 +144,33 @@ func _painted_ground() -> void:
     add_child(node)
     scenery_count += 1
 
+func _distant_hills() -> void:
+    # Ring-like illustrated hills well beyond the physical 140m yard.
+    var colors := [Color("#526d59"),Color("#6c835e"),
+        Color("#7f936a"),Color("#a0aa80")]
+    for n in range(17):
+        var x := -115.0 + float(n) * 15.0
+        var z := -97.0 + float(n % 3) * 8.0
+        var rise := 18.0 + 6.0 * sin(float(n) * 1.17)
+        _ball(self,Vector3(x,-12.0,z),
+            Vector3(25.0,rise,20.0),colors[n%colors.size()])
+    var village := Node3D.new()
+    village.name = "Hillside_Village"
+    village.position = Vector3(-21.0,1.8,-87.0)
+    add_child(village)
+    for i in range(8):
+        var x := -13.0 + float(i) * 3.7
+        var y := 3.5 + float(i%3)*1.10
+        _box(village,Vector3(2.65,y,2.50),
+            Vector3(x,y*0.5,0),_p("white"))
+        _box(village,Vector3(3.0,0.32,2.8),
+            Vector3(x,y+0.22,0),_p("clay"),
+            Vector3(0,0,deg_to_rad(14 if i%2==0 else -14)))
+    _box(village,Vector3(1.40,9.2,1.70),
+        Vector3(4.5,5.2,0.25),_p("earth_light"))
+    _box(village,Vector3(1.90,0.8,2.0),
+        Vector3(4.5,10.0,0.25),_p("clay"))
+
 func _farm_buildings() -> void:
     var b := Node3D.new()
     b.name = "Weatherboard_Barn"
@@ -216,6 +244,13 @@ func _blade_mesh() -> ArrayMesh:
         for v in [a,b,peak]:
             st.set_normal(Vector3.UP)
             st.add_vertex(v)
+    for n in range(4):
+        var t := float(n)*TAU/4.0+0.27
+        var radial := Vector3(cos(t),0,sin(t))
+        for v in [radial*-0.11,radial*0.10,
+                Vector3(0.04,0.22+float(n%2)*0.16,0.015)]:
+            st.set_normal(Vector3.UP)
+            st.add_vertex(v)
     return st.commit()
 
 func _make_instanced(mesh: Mesh, colors: Array[Color],
@@ -249,7 +284,7 @@ func _ground_detail() -> void:
     blade_mat.roughness = 1.0
     blades.surface_set_material(0, blade_mat)
     var grass_positions: Array[Vector3] = []
-    for i in range(4400):
+    for i in range(11500):
         var x := rng.randf_range(-64.0,64.0)
         var z := rng.randf_range(-63.0,63.0)
         if (absf(x) < 13.0 and z < -0.8 and z > -23.5) or            (absf(x) < 5.0 and z > -7.0 and z < 32.0):
@@ -269,7 +304,7 @@ func _ground_detail() -> void:
     petal_mat.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
     petal.surface_set_material(0,petal_mat)
     var flower_positions: Array[Vector3] = []
-    for i in range(920):
+    for i in range(1750):
         var x := rng.randf_range(-57.0,57.0)
         var z := rng.randf_range(-58.0,58.0)
         if (absf(x) < 14.0 and z < 4.0 and z > -25.0):
@@ -304,8 +339,8 @@ func _clouds() -> void:
     for group in range(8):
         var cloud := Node3D.new()
         cloud.name = "Cotton_Cloud_%02d" % group
-        cloud.position = Vector3(rng.randf_range(-95.0,95.0),
-            rng.randf_range(34.0,46.0),rng.randf_range(-100.0,-65.0))
+        cloud.position = Vector3(rng.randf_range(-62.0,62.0),
+            rng.randf_range(23.0,35.0),rng.randf_range(-94.0,-58.0))
         add_child(cloud)
         for n in range(7):
             var puff := Vector3(float(n-3)*rng.randf_range(1.9,3.0),
