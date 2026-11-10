@@ -328,10 +328,10 @@ func _digging_site_details() -> void:
         for i in range(21):
             var z := -2.4 + float(i) * 0.27
             _box(self,Vector3(0.41,0.011,0.13),
-                Vector3(side,0.038,z),_p("earth"))
+                Vector3(side,0.025,z),_p("clay"))
     # Wheel rut and compaction graphics along the loading approach.
     for side in [-0.58,0.58]:
         for i in range(50):
             var z := 2.2 + float(i) * 0.30
             _box(self,Vector3(0.27,0.006,0.16),
-                Vector3(side,0.023,z),_p("earth_light"))
+                Vector3(side,0.022,z),_p("earth"))

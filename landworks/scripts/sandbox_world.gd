@@ -29,7 +29,10 @@ var toggle_down := false
 var legacy_down := false
 var hook_down := false
 var hook_status := "Press G / Square to hook the nearest loose object"
-var orbit_yaw := 0.25
+var orbit_yaw := 0.72
+var show_help := false
+var help_down := false
+var help_panel: ColorRect
 var smoke := false
 var smoke_time := 0.0
 var smoke_log_elapsed := 0.0
@@ -222,15 +225,15 @@ func _build_environment() -> void:
     var sun := DirectionalLight3D.new()
     sun.name = "WarmAfternoonKeyLight"
     sun.rotation_degrees = Vector3(-49, -34, 0)
-    sun.light_color = Color("#fff0d1")
-    sun.light_energy = 1.40
+    sun.light_color = Color("#fff1df")
+    sun.light_energy = 1.04
     sun.shadow_enabled = true
     add_child(sun)
     var world := WorldEnvironment.new()
     var env := Environment.new()
     var painted_sky := ProceduralSkyMaterial.new()
-    painted_sky.sky_top_color = Color("#589cd3")
-    painted_sky.sky_horizon_color = Color("#c9dfdb")
+    painted_sky.sky_top_color = Color("#478db9")
+    painted_sky.sky_horizon_color = Color("#b3d4d3")
     painted_sky.ground_horizon_color = Color("#c4c2a4")
     painted_sky.ground_bottom_color = Color("#8a956c")
     painted_sky.sun_angle_max = 22.0
@@ -239,15 +242,16 @@ func _build_environment() -> void:
     env.background_mode = Environment.BG_SKY
     env.sky = sky
     env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-    env.ambient_light_energy = 0.85
+    env.ambient_light_energy = 0.43
     env.fog_enabled = true
     env.fog_light_color = Color("#d3d8c2")
-    env.fog_density = 0.0020
+    env.fog_density = 0.0012
     env.fog_sky_affect = 0.25
-    env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+    env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
     env.adjustment_enabled = true
-    env.adjustment_saturation = 1.13
-    env.adjustment_contrast = 1.045
+    env.adjustment_brightness = 0.87
+    env.adjustment_saturation = 1.22
+    env.adjustment_contrast = 1.14
     world.environment = env
     add_child(world)
     camera = Camera3D.new()
@@ -260,17 +264,33 @@ func _build_environment() -> void:
 
 func _build_ui() -> void:
     var canvas := CanvasLayer.new()
+    canvas.name = "GameHUD"
     add_child(canvas)
     var bg := ColorRect.new()
-    bg.color = Color(0.07, 0.09, 0.08, 0.83)
-    bg.size = Vector2(1160, 170)
-    bg.position = Vector2(16, 16)
+    bg.name = "CompactGlassHUD"
+    bg.color = Color(0.045,0.085,0.084,0.76)
+    bg.size = Vector2(565,111)
+    bg.position = Vector2(14,14)
     canvas.add_child(bg)
     status = Label.new()
-    status.position = Vector2(28, 22)
-    status.add_theme_font_size_override("font_size", 18)
-    status.add_theme_color_override("font_color", Color.WHITE)
+    status.name = "CompactMachineTelemetry"
+    status.position = Vector2(25,23)
+    status.add_theme_font_size_override("font_size",17)
+    status.add_theme_color_override("font_color",Color("#fff3dc"))
     canvas.add_child(status)
+    help_panel = ColorRect.new()
+    help_panel.name = "ControlsHelp"
+    help_panel.color = Color(0.035,0.075,0.074,0.91)
+    help_panel.position = Vector2(14,138)
+    help_panel.size = Vector2(600,186)
+    help_panel.visible = false
+    canvas.add_child(help_panel)
+    var instructions := Label.new()
+    instructions.position = Vector2(14,12)
+    instructions.add_theme_font_size_override("font_size",15)
+    instructions.add_theme_color_override("font_color",Color("#f9ecd5"))
+    instructions.text = "LANDWORKS  •  CONTROLS\n" +         "Tab / Triangle — change machine     Z/C — orbit camera\n" +         "Tractor: W/S travel, A/D steer; PS R2/L2 travel + left stick\n" +         "Excavator: W/S tracks, A/D differential pivot\n" +         "I/K boom  |  O/L stick  |  P/; bucket  |  Q/E slew\n" +         "G / Square — bucket hook     R — dump soil     F12 — old yard\n" +         "F1 — close help"
+    help_panel.add_child(instructions)
 
 func _select_machine(which: int) -> void:
     active_machine = which
@@ -392,6 +412,11 @@ func _finish_smoke() -> void:
 
 func _process(delta: float) -> void:
     if not smoke:
+        var help_pressed := Input.is_key_pressed(KEY_F1)
+        if help_pressed and not help_down:
+            show_help = not show_help
+            help_panel.visible = show_help
+        help_down = help_pressed
         var toggle := CI.switch_machine()
         if toggle and not toggle_down:
             _select_machine(1 - active_machine)
@@ -413,29 +438,25 @@ func _process(delta: float) -> void:
         orbit_yaw += (float(Input.is_key_pressed(KEY_C)) -
             float(Input.is_key_pressed(KEY_Z))) * delta * 1.2
     var target: Node3D = tractor if active_machine == 0 else digger.undercarriage
-    var focus := target.global_position + Vector3.UP * (0.6 if active_machine == 0 else 1.5)
-    var dist := 7.8 if active_machine == 0 else 13.0
-    var height := 3.8 if active_machine == 0 else 6.8
+    var focus := target.global_position + (
+        Vector3(0,0.65,-0.20) if active_machine == 0 else Vector3(0,1.30,-1.45))
+    var dist := 5.90 if active_machine == 0 else 8.75
+    var height := 2.50 if active_machine == 0 else 3.50
     var wanted := focus + Vector3(sin(orbit_yaw) * dist, height, cos(orbit_yaw) * dist)
     camera.global_position = camera.global_position.lerp(wanted, clampf(delta * 4.5, 0.0, 1.0))
     camera.look_at(focus, Vector3.UP)
-    var speed := tractor.linear_velocity.length() * 3.6
-    var machine_label := "B7100HST + 400kg trailer" if active_machine == 0 else "KX080 physical excavator"
-    var surface_label := str(_current_surface(target.global_position.x)["name"])
-    status.text = "LANDWORKS SANDBOX | %s | %s\n" % [machine_label, surface_label]
+    var speed: float = tractor.linear_velocity.length() * 3.6
+    var ground_label: String = str(_current_surface(target.global_position.x)["name"])
     if active_machine == 0:
-        status.text += "TRACTOR: W/S forward/reverse | A/D steer | PS L stick + R2/L2 pedals\n"
-        status.text += "Speed %.1f km/h | HST requested %.0f N | TAB/△ switch to excavator\n" % [
-            speed, tractor.last_requested_hst_force_n]
+        status.text = "KUBOTA B7100 HST  •  FARM WORKS\n"
+        status.text += "Speed %.1f km/h   |   HST %.1f kW   |   %s\n" % [
+            speed, tractor.last_hst_power_kw,ground_label]
+        status.text += "400 kg trailer  •  Tab switch machine  •  F1 controls"
     else:
-        status.text += "EXC: W/S crawl A/D pivot | I/K boom O/L stick P/; bucket Q/E slew\n"
-        status.text += "PS L stick tracks | R stick arm/bucket | R2/L2 boom | L1/R1 slew\n"
-        status.text += "G / Square hook: %s\n" % hook_status
-        status.text += "Hydraulic %.1f MPa / %.1f Lpm | track contacts %d/4\n" % [
-            float(digger.hydraulic_state.get("pressure_mpa", 0.0)),
-            float(digger.hydraulic_state.get("flow_lpm", 0.0)), digger.ground_contact_count]
-    status.text += "SOIL: bucket %.0f L / %.0f L | cut %.0f L | spilled %.0f L | grains %d | ledger error %.2f L\\n" % [
-        soil_bucket_m3 * 1000.0, earth.MAX_BUCKET_M3 * 1000.0,
-        maximum_excavated_m3 * 1000.0, maximum_dumped_m3 * 1000.0,
-        earth.mobile.size(), soil_mass_error_m3 * 1000.0]
-    status.text += "Earthmoving banks ahead: gravel and cohesive clay | R to dump | TAB change machine | F12 old yard"
+        status.text = "KUBOTA KX080-3  •  EARTHMOVING\n"
+        status.text += "Hyd %.1f MPa  |  %.1f L/min  |  Ground %d/4\n" % [
+            float(digger.hydraulic_state.get("pressure_mpa",0.0)),
+            float(digger.hydraulic_state.get("flow_lpm",0.0)),
+            digger.ground_contact_count]
+        status.text += "Bucket %.0f L  |  Dug %.0f L  |  F1 controls" % [
+            soil_bucket_m3*1000.0,maximum_excavated_m3*1000.0]
