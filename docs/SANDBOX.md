@@ -105,3 +105,22 @@ the decoration adds invisible collision barriers. The physics ground remains
 flat and the editable earth pad is still the only deformable terrain area.
 The concept illustration is the target look, not a baked 2D game backdrop.
 The art currently uses generated geometry rather than Kubota OEM CAD meshes.
+
+
+## Machine visual upgrade (first engineering-art pass)
+
+The B7100HST now has detailed bonnet, fenders, grille, lamps, louvres,
+ROPS, steering console, turf tread bars and steel wheel hubs, dimensioned
+around the existing measured wheelbase and wheel radii. The KX080-3 visual
+layer adds black crawler tread segments, rollers, vented counterweight,
+glass-framed cab, pivot pin details, a visible open-top 5-tooth bucket and
+four chrome/painted hydraulic-cylinder assemblies that follow the **actual
+Jolt rigid-body joints** as they move.
+
+The new visual meshes are independent from collision geometry and torque
+limits. The game still prioritises correctly pivoted, licensed segmented GLBs
+when those are installed in the tractor rig folder; procedural meshes are
+fallbacks. The excavator remains a carefully proportioned conceptual model,
+not an OEM CAD replica. Its collision bucket is a simpler proxy than its
+visible shell, and its telescoping hydraulic cylinders are visual until
+cylinder force/kinematic coupling is calibrated.

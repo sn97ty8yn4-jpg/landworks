@@ -11,6 +11,7 @@ const TRAILER = preload("res://landworks/scripts/work_trailer.gd")
 const SOIL = preload("res://landworks/scripts/ground_response.gd")
 const EARTH = preload("res://landworks/scripts/earthworks.gd")
 const ART = preload("res://landworks/scripts/art_scene.gd")
+const MACHINE_ART = preload("res://landworks/scripts/machine_art.gd")
 
 const SMOKE_DURATION_S := 21.0
 const CLAY_START_X := 18.0
@@ -162,6 +163,10 @@ func _build_machines() -> void:
     digger = E.new()
     digger.name = "Excavator"
     add_child(digger)
+    var visual_shell: Node3D = MACHINE_ART.new()
+    visual_shell.name = "DetailedKubotaVisuals_ArtOnly"
+    add_child(visual_shell)
+    visual_shell.attach_to(tractor,digger)
 
 func _build_earthworks() -> void:
     earth = EARTH.new()
