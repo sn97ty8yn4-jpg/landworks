@@ -205,6 +205,49 @@ func _dress_tractor() -> void:
             var lug := _box(visual,Vector3(width*0.93,0.038,0.089),
                 Vector3(0,sin(angle)*radius,cos(angle)*radius),TRACK_EDGE)
             lug.rotation.x = -angle
+    _tractor_operator(root)
+
+func _tractor_operator(root: Node3D) -> void:
+    # Illustrated seated driver at the steering console, independently
+    # rendered so body shape and control physics remain untouched.
+    var workshirt := Color("#607b8d")
+    var skin := Color("#edc8a7")
+    var straw := Color("#d9c28a")
+    _box(root,Vector3(0.42,0.47,0.28),
+        Vector3(0,1.11,0.60),workshirt)
+    _sphere(root,Vector3(0,1.47,0.55),
+        Vector3(0.165,0.19,0.16),skin)
+    _cyl(root,0.295,0.058,Vector3(0,1.65,0.55),straw)
+    _cyl(root,0.18,0.15,Vector3(0,1.73,0.55),straw)
+    for x in [-0.20,0.20]:
+        _rod(root,Vector3(x,1.31,0.57),
+            Vector3(x*0.60,0.81,0.06),0.075,workshirt)
+        _sphere(root,Vector3(x*0.60,0.81,0.06),
+            Vector3(0.075,0.068,0.071),skin)
+        _rod(root,Vector3(x*0.67,0.95,0.67),
+            Vector3(x*0.67,0.32,0.14),0.09,Color("#586e78"))
+        _box(root,Vector3(0.19,0.09,0.31),
+            Vector3(x*0.67,0.25,-0.02),DARK)
+
+func _excavator_operator(root: Node3D) -> void:
+    # Hand-painted silhouette visible behind the cab glass. The cabin
+    # is still a visual shell; no human collision mass is introduced.
+    var coat := Color("#8d9681")
+    var skin := Color("#e5b79c")
+    _box(root,Vector3(0.36,0.43,0.25),
+        Vector3(-0.50,2.18,-0.24),coat)
+    _sphere(root,Vector3(-0.50,2.51,-0.24),
+        Vector3(0.15,0.18,0.15),skin)
+    _sphere(root,Vector3(-0.50,2.66,-0.25),
+        Vector3(0.18,0.09,0.17),DARK)
+    for x in [-0.67,-0.33]:
+        _rod(root,Vector3(x,2.27,-0.24),
+            Vector3(x,1.95,-0.65),0.063,coat)
+        _sphere(root,Vector3(x,1.95,-0.65),
+            Vector3(0.065,0.061,0.068),skin)
+    for x in [-0.66,-0.34]:
+        _box(root,Vector3(0.055,0.23,0.055),
+            Vector3(x,1.97,-0.73),DARK)
 
 func _dress_excavator() -> void:
     _hide_primitive_art(excavator.undercarriage)
@@ -266,6 +309,7 @@ func _dress_excavator() -> void:
         Vector3(-0.965,2.38,-0.34),GLASS)
     for pos in [Vector3(-0.17,2.96,-0.90),Vector3(-0.82,2.96,-0.90)]:
         _box(upper,Vector3(0.24,0.17,0.16),pos,LIGHT)
+    _excavator_operator(upper)
     _cyl(upper,0.09,0.09,Vector3(-0.61,3.07,-0.22),
         Color("#efc254"))
     # Boom/stick are measured from original rigid-body joint origins,
