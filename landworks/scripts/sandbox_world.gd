@@ -10,6 +10,7 @@ const E = preload("res://landworks/scripts/sandbox_excavator.gd")
 const TRAILER = preload("res://landworks/scripts/work_trailer.gd")
 const SOIL = preload("res://landworks/scripts/ground_response.gd")
 const EARTH = preload("res://landworks/scripts/earthworks.gd")
+const ART = preload("res://landworks/scripts/art_scene.gd")
 
 const SMOKE_DURATION_S := 21.0
 const CLAY_START_X := 18.0
@@ -67,7 +68,7 @@ func _ready() -> void:
     if smoke_out != "":
         DirAccess.make_dir_recursive_absolute(smoke_out)
     _build_terrain()
-    _build_scenery()
+    _build_painted_world()
     _build_machines()
     _build_earthworks()
     _build_loose_objects()
@@ -107,13 +108,13 @@ func _build_terrain() -> void:
     var physics := PhysicsMaterial.new()
     physics.friction = 0.82
     floor.physics_material_override = physics
-    M.block(self, Vector3(140, 0.13, 140), Vector3(0, -0.075, 0), Color("#70835a"))
-    M.block(self, Vector3(39, 0.016, 70), Vector3(0, 0.008, 0),
-        Color("#a79a75")) # hardpack test zone
-    M.block(self, Vector3(36, 0.017, 70), Vector3(37, 0.010, 0),
-        Color("#7a654d")) # clay test zone
-    M.block(self, Vector3(0.15, 0.03, 70), Vector3(CLAY_START_X, 0.024, 0),
-        Color("#d8bd70")) # zone boundary
+    # Flat Jolt supporting plane remains at exact y=0. Painterly ground is
+    # purely visual and never changes the tyre or track-contact calculations.
+
+func _build_painted_world() -> void:
+    var decor: Node3D = ART.new()
+    decor.name = "PaintedCountryside_VisualOnly"
+    add_child(decor)
 
 func _build_scenery() -> void:
     # A few fixed obstacles and guide markers; keep critical working space open.
@@ -210,22 +211,42 @@ func _build_loose_objects() -> void:
 
 func _build_environment() -> void:
     var sun := DirectionalLight3D.new()
-    sun.rotation_degrees = Vector3(-53, -30, 0)
-    sun.light_energy = 1.15
+    sun.name = "WarmAfternoonKeyLight"
+    sun.rotation_degrees = Vector3(-49, -34, 0)
+    sun.light_color = Color("#fff0d1")
+    sun.light_energy = 1.40
+    sun.shadow_enabled = true
     add_child(sun)
     var world := WorldEnvironment.new()
     var env := Environment.new()
-    env.background_mode = Environment.BG_COLOR
-    env.background_color = Color("#b1cfdf")
-    env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-    env.ambient_light_color = Color("#e3e2d1")
-    env.ambient_light_energy = 0.75
+    var painted_sky := ProceduralSkyMaterial.new()
+    painted_sky.sky_top_color = Color("#589cd3")
+    painted_sky.sky_horizon_color = Color("#c9dfdb")
+    painted_sky.ground_horizon_color = Color("#c4c2a4")
+    painted_sky.ground_bottom_color = Color("#8a956c")
+    painted_sky.sun_angle_max = 22.0
+    var sky := Sky.new()
+    sky.sky_material = painted_sky
+    env.background_mode = Environment.BG_SKY
+    env.sky = sky
+    env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+    env.ambient_light_energy = 0.85
+    env.fog_enabled = true
+    env.fog_light_color = Color("#d3d8c2")
+    env.fog_density = 0.0020
+    env.fog_sky_affect = 0.25
+    env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+    env.adjustment_enabled = true
+    env.adjustment_saturation = 1.13
+    env.adjustment_contrast = 1.045
     world.environment = env
     add_child(world)
     camera = Camera3D.new()
-    camera.name = "PlayableFollowCamera"
+    camera.name = "PaintedFollowCamera"
     add_child(camera)
     camera.current = true
+    camera.fov = 65.0
+    camera.far = 270.0
     camera.position = tractor.position + Vector3(7, 5, 8)
 
 func _build_ui() -> void:

@@ -93,3 +93,15 @@ ground, bucket, moving parcels and material discharged beyond the pad.
 This is **not** fully resolved particle physics. See
 `docs/EARTHWORKS.md` for resolution, soil assumptions, force models,
 conservation limitations and the independent Godot mass-balance test.
+
+
+## Visual direction — countryside edition
+
+The integrated game now uses a visual-only countryside layer: hand-coloured
+vertex-paint meadow, distant cumulus clouds, weatherboard barn, fence lines,
+toon-lit timber and vegetation, grass/flowers/pebbles drawn through GPU
+MultiMesh instancing, painterly sky colours and gentle distance fog. None of
+the decoration adds invisible collision barriers. The physics ground remains
+flat and the editable earth pad is still the only deformable terrain area.
+The concept illustration is the target look, not a baked 2D game backdrop.
+The art currently uses generated geometry rather than Kubota OEM CAD meshes.
