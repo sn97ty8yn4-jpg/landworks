@@ -135,12 +135,31 @@ func _painted_ground() -> void:
     var node := MeshInstance3D.new()
     node.name = "PaintedMeadow_VisualOnly"
     node.mesh = terrain
-    var material := StandardMaterial3D.new()
-    material.vertex_color_use_as_albedo = true
-    material.roughness = 1.0
-    material.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
-    material.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
-    node.material_override = material
+    # Broad brush bands plus stable fine speckling provide illustrated paint
+    # texture without external copyrighted texture or giant photo backdrops.
+    var brush := Shader.new()
+    brush.code = """
+shader_type spatial;
+render_mode diffuse_toon, specular_disabled;
+varying vec3 painted_world;
+void vertex() {
+    painted_world = (MODEL_MATRIX * vec4(VERTEX,1.0)).xyz;
+}
+float pigment(vec2 p) {
+    return fract(sin(dot(floor(p),vec2(12.9898,78.233))) * 43758.5453);
+}
+void fragment() {
+    vec2 uv = painted_world.xz;
+    float wash = sin(uv.x*0.31+cos(uv.y*0.22))*cos(uv.y*0.21);
+    float stipple = pigment(uv*7.0);
+    float fleck = pigment(uv*21.0);
+    ALBEDO = COLOR.rgb * (0.89+wash*0.105+stipple*0.16+fleck*0.06);
+    ROUGHNESS = 1.0;
+}
+"""
+    var surface := ShaderMaterial.new()
+    surface.shader = brush
+    node.material_override = surface
     add_child(node)
     scenery_count += 1
 
@@ -150,13 +169,13 @@ func _distant_hills() -> void:
         Color("#7f936a"),Color("#a0aa80")]
     for n in range(17):
         var x := -115.0 + float(n) * 15.0
-        var z := -97.0 + float(n % 3) * 8.0
-        var rise := 18.0 + 6.0 * sin(float(n) * 1.17)
-        _ball(self,Vector3(x,-12.0,z),
-            Vector3(25.0,rise,20.0),colors[n%colors.size()])
+        var z := -79.0 + float(n % 3) * 6.0
+        var rise := 19.0 + 7.0 * sin(float(n) * 1.17)
+        _ball(self,Vector3(x,-7.5,z),
+            Vector3(26.0,rise,21.0),colors[n%colors.size()])
     var village := Node3D.new()
     village.name = "Hillside_Village"
-    village.position = Vector3(-21.0,1.8,-87.0)
+    village.position = Vector3(-21.0,5.2,-75.0)
     add_child(village)
     for i in range(8):
         var x := -13.0 + float(i) * 3.7
@@ -200,6 +219,19 @@ func _farm_buildings() -> void:
         _box(b, Vector3(2.4,0.08,0.30), Vector3(0.0, 3.0,z), _p("tin"))
     for pos in [Vector3(-3.9, 4.6,-3.98),Vector3(3.9,4.6,-3.98)]:
         _ball(b,pos,Vector3(0.20,0.20,0.2),_p("flower_yellow"))
+    # Cascading flowering vines at the gable edge; clusters are light meshes.
+    for n in range(52):
+        var x := rng.randf_range(-4.9,-1.9)
+        var y := rng.randf_range(3.0,5.7)
+        var z := -3.99 + rng.randf_range(-0.22,0.16)
+        var color_id := "flower_pink" if n%4!=0 else "white"
+        _ball(b,Vector3(x,y,z),
+            Vector3(0.07,0.08,0.07),_p(color_id))
+    for n in range(10):
+        var x := -4.85+float(n)*0.3
+        _pole(b,Vector3(x,4.9,-4.03),
+            Vector3(x+0.15,3.2-float(n%3)*0.16,-4.09),
+            0.017,_p("leaf"))
 
 func _wooden_fence() -> void:
     for side in [-1.0,1.0]:
@@ -238,17 +270,17 @@ func _blade_mesh() -> ArrayMesh:
     st.begin(Mesh.PRIMITIVE_TRIANGLES)
     for angle in [0.0, PI/2.0]:
         var radial := Vector3(cos(angle),0,sin(angle))
-        var a := -radial*0.07
-        var b := radial*0.07
-        var peak := Vector3(0.07,0.46,0.0)
+        var a := -radial*0.039
+        var b := radial*0.039
+        var peak := Vector3(0.044,0.27,0.0)
         for v in [a,b,peak]:
             st.set_normal(Vector3.UP)
             st.add_vertex(v)
     for n in range(4):
         var t := float(n)*TAU/4.0+0.27
         var radial := Vector3(cos(t),0,sin(t))
-        for v in [radial*-0.11,radial*0.10,
-                Vector3(0.04,0.22+float(n%2)*0.16,0.015)]:
+        for v in [radial*-0.055,radial*0.050,
+                Vector3(0.02,0.16+float(n%2)*0.12,0.01)]:
             st.set_normal(Vector3.UP)
             st.add_vertex(v)
     return st.commit()
