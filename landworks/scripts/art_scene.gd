@@ -176,7 +176,7 @@ func _farm_buildings() -> void:
 func _wooden_fence() -> void:
     for side in [-1.0,1.0]:
         for i in range(17):
-            var x := side * 47.0
+            var x: float = float(side) * 47.0
             var z := -43.0 + float(i) * 5.2
             _box(self, Vector3(0.19,1.52,0.19),Vector3(x,0.78,z),_p("timber"))
             if i<16:
