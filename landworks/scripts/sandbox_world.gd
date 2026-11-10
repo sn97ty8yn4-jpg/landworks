@@ -366,7 +366,10 @@ func _update_earthworks(delta: float) -> void:
         if cut_volume > 0.0:
             soil_bucket_m3 += cut_volume
             maximum_excavated_m3 += cut_volume
-            soil_bucket_material = "clay" if lip.x > 3.1 else "gravel"
+            # Choose material from the actual excavated cells, not just
+            # a guessed world-X dividing line.
+            soil_bucket_material = "clay" if float(result.get("clay_m3",0.0)) >
+                float(result.get("gravel_m3",0.0)) else "gravel"
             var reaction_n: float = result["force_n"]
             # Push back on the REAL Jolt bucket at the tooth edge; this force
             # can oppose the cylinder motor, react through arm pins and tip

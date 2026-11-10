@@ -71,3 +71,19 @@ yard collision level; only real gravel/clay bank material protrudes. The
 1,500 kg test crate has been relocated to the side for the playable yard,
 leaving a clear path for the excavator to enter the soil work pad. A separate
 headless crawler-access test is required to verify actual traversal.
+
+
+## Higher-resolution visual and material flow pass
+
+The active 18m soil pad now uses **81×81 heights at 225 mm spacing**,
+substantially improving bucket cuts, slope collapse and gravel/clay contours.
+The continuum includes terrain-aligned vertex colours for strata/exposed cut
+faces, plus a low-cost local-colour shader with world-space pigment grain.
+
+Discharged material now moves in **0.75-litre volume parcels**, up to 800
+active parcels, each represented by a small, colour-coded aggregate mesh.
+On settling, material is merged into the heightfield and its gravel/clay
+material ID updates as well. Mass conservation is still required across
+ground, bucket, airborne material and any spill beyond the work pad. A
+material-specific soil atlas and true particle-particle DEM remain future
+steps; the system is still a hybrid heightfield/parcel solver.

@@ -7,7 +7,7 @@ class EarthworkSourceTests(unittest.TestCase):
         s = (ROOT / "landworks/scripts/earthworks.gd").read_text()
         for token in ("HeightMapShape3D.new()", "map_data = map",
                       "cut_sweep(", "release_soil(", "ground_volume_m3(",
-                      "mobile_volume_m3(", "MAX_PARTICLES := 240",
+                      "mobile_volume_m3(", "MAX_PARTICLES := 800",
                       "_slump(", "extracted_total_m3", "deposited_total_m3"):
             self.assertIn(token, s)
     def test_real_engine_smoke_exists(self):

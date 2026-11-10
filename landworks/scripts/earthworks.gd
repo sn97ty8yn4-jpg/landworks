@@ -2,24 +2,28 @@
 # Godot 4.6/Jolt compatible. NO full DEM/SPH or excavator attachment calibration.
 extends Node3D
 
-const N := 41
-const CELL := 0.45
-const HALF := 20
+# 81×81 heightfield / 0.225m cells. Doubles spatial resolution in each axis
+# without changing the physical 18m work area or volume accounting.
+const N := 81
+const CELL := 0.225
+const HALF := 40
 # Recess the unloaded heightmap 3 cm below the flat Jolt yard.
 # Previously the 45mm collision lip at the boundary could arrest rigid
 # box-track edges; the inset permits a level ingress, while real banks still
 # rise naturally above the yard.
 const BASE_HEIGHT := -0.03
-const MAX_PARTICLES := 240
-const PARCEL_M3 := 0.0045
+# Smaller sub-litre parcels model aggregate flow more convincingly.
+# Mobile volume is conserved; particles remain non-interacting proxies.
+const MAX_PARTICLES := 800
+const PARCEL_M3 := 0.00075
 const MAX_BUCKET_M3 := 0.24
 const GRAVITY := 9.81
 
 const SOIL_TYPES := {
     "gravel": {"density": 1700.0, "repose_deg": 36.0,
-        "cut_pressure_pa": 34000.0, "flow_drag": 1.3, "tint": Color("#ac986c")},
+        "cut_pressure_pa": 34000.0, "flow_drag": 1.3, "tint": Color("#a89a79")},
     "clay": {"density": 1850.0, "repose_deg": 48.0,
-        "cut_pressure_pa": 65000.0, "flow_drag": 3.8, "tint": Color("#80674f")}
+        "cut_pressure_pa": 65000.0, "flow_drag": 3.8, "tint": Color("#916047")}
 }
 
 var height_values := PackedFloat32Array()
@@ -100,10 +104,29 @@ func _make_visuals() -> void:
     terrain_mesh.name = "ContinuumSoilSurface"
     add_child(terrain_mesh)
     var material := StandardMaterial3D.new()
-    material.vertex_color_use_as_albedo = true
-    material.roughness = 0.97
-    material.cull_mode = BaseMaterial3D.CULL_DISABLED
-    terrain_mesh.material_override = material
+    # Material is derived from actual soil ID, surface slope and layered
+    # stratification, then broken up with small-scale world-space pigment
+    # variation in a cheap Compatibility-renderer spatial shader.
+    var soil_shader := Shader.new()
+    soil_shader.code = """
+shader_type spatial;
+render_mode cull_disabled, diffuse_toon, specular_disabled;
+varying vec3 soil_world;
+void vertex() {
+    soil_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+}
+void fragment() {
+    vec2 grain_coord = floor(soil_world.xz * 31.0);
+    float grain = fract(sin(dot(grain_coord, vec2(127.1, 311.7))) * 43758.5453);
+    float fine = fract(sin(dot(floor(soil_world.xz * 87.0),
+        vec2(73.19, 21.71))) * 19871.331);
+    ALBEDO = COLOR.rgb * (0.82 + 0.22 * grain + 0.12 * fine);
+    ROUGHNESS = 1.0;
+}
+"""
+    var soil_mat := ShaderMaterial.new()
+    soil_mat.shader = soil_shader
+    terrain_mesh.material_override = soil_mat
     granular = MultiMeshInstance3D.new()
     granular.name = "MovingGranularParcels"
     add_child(granular)
@@ -113,10 +136,10 @@ func _make_visuals() -> void:
     mm.instance_count = MAX_PARTICLES
     mm.visible_instance_count = 0
     var sphere := SphereMesh.new()
-    sphere.radius = 0.097
-    sphere.height = 0.194
-    sphere.radial_segments = 8
-    sphere.rings = 4
+    sphere.radius = 0.059
+    sphere.height = 0.118
+    sphere.radial_segments = 7
+    sphere.rings = 3
     mm.mesh = sphere
     granular.multimesh = mm
     var pmat := StandardMaterial3D.new()
@@ -140,7 +163,13 @@ func _rebuild_terrain() -> void:
             normal.append(Vector3(left_h - right_h, 2.0 * CELL,
                 near_h - far_h).normalized())
             var tint: Color = SOIL_TYPES[_soil_type(i, j)]["tint"]
-            colour.append(tint.darkened(0.035 * float((i + j) % 4)))
+            var steepness: float = 1.0 - normal[id].y
+            var band: float = 0.035 * sin(height_values[id] * 15.0)
+            var mottling: float = 0.045 * sin(float(i)*1.83+float(j)*2.31)
+            if material_ids[id] == 1 and steepness > 0.18:
+                tint = tint.darkened(clampf(0.10 + steepness*0.35,0,0.39))
+            colour.append(tint.lightened(maxf(0.0,band+mottling)).darkened(
+                maxf(0.0,-band-mottling)))
     for j in range(N - 1):
         for i in range(N - 1):
             var a := _idx(i, j)
@@ -171,8 +200,11 @@ func _rebuild_particles() -> void:
         var particle: Dictionary = mobile[i]
         var global_point: Vector3 = particle["pos"]
         var point := to_local(global_point)
-        mm.set_instance_transform(i, Transform3D(Basis(), point))
-        mm.set_instance_color(i, SOIL_TYPES[str(particle["material"])]["tint"])
+        var ratio: float = clampf(float(particle["m3"]) / PARCEL_M3,0.15,1.0)
+        var size: float = pow(ratio,1.0/3.0)
+        var factor := Vector3.ONE * size
+        mm.set_instance_transform(i,Transform3D(Basis().scaled(factor),point))
+        mm.set_instance_color(i,SOIL_TYPES[str(particle["material"])]["tint"])
     mobile_dirty = false
 
 func has_position(world_pos: Vector3) -> bool:
@@ -221,6 +253,8 @@ func cut_sweep(start: Vector3, finish: Vector3, tool_width_m: float,
     var width_sq := pow(maxf(0.25, tool_width_m * 0.52), 2)
     var volume := 0.0
     var pressure_sum := 0.0
+    var cut_gravel_m3 := 0.0
+    var cut_clay_m3 := 0.0
     var candidate_count := 0
     for j in range(1, N - 1):
         for i in range(1, N - 1):
@@ -238,7 +272,12 @@ func cut_sweep(start: Vector3, finish: Vector3, tool_width_m: float,
             if removed <= 0.0:
                 break
             height_values[id] -= removed
-            volume += removed * CELL * CELL
+            var parcel_volume := removed * CELL * CELL
+            volume += parcel_volume
+            if material_ids[id] == 1:
+                cut_clay_m3 += parcel_volume
+            else:
+                cut_gravel_m3 += parcel_volume
             var soil: Dictionary = SOIL_TYPES[_soil_type(i, j)]
             pressure_sum += float(soil["cut_pressure_pa"]) * removed * tool_width_m
             candidate_count += 1
@@ -249,7 +288,8 @@ func cut_sweep(start: Vector3, finish: Vector3, tool_width_m: float,
     var force := minf(22000.0, pressure_sum / maxf(1.0, float(candidate_count) * 0.25))
     last_cut_force_n = force
     peak_cut_force_n = maxf(peak_cut_force_n, force)
-    return {"volume_m3": volume, "force_n": force}
+    return {"volume_m3": volume, "force_n": force,
+        "gravel_m3": cut_gravel_m3, "clay_m3": cut_clay_m3}
 
 func release_soil(world_tip: Vector3, direction: Vector3,
         amount_m3: float, kind: String = "gravel") -> float:
@@ -283,6 +323,9 @@ func _deposit_particle(p: Dictionary) -> void:
     if has_position(p["pos"]):
         var id := _idx(coords.x, coords.y)
         height_values[id] += volume / (CELL * CELL)
+        # Deposited cohesive clay must actually turn the receiving cell
+        # into clay; volume and material appearance must stay coupled.
+        material_ids[id] = 1 if str(p["material"]) == "clay" else 0
         deposited_total_m3 += volume
         terrain_dirty = true
     else:
