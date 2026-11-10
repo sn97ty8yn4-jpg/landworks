@@ -7,6 +7,7 @@ const INPUTS = preload("res://landworks/scripts/machine_input.gd")
 
 var operated := false
 var scripted_test := false
+var access_test := false
 var test_clock := 0.0
 var slew_target_rad := 0.0
 var total_slew_command_deg := 0.0
@@ -62,7 +63,10 @@ func _physics_process(delta: float) -> void:
     var stick_cmd := 0.0
     var bucket_cmd := 0.0
     var slew_cmd := 0.0
-    if scripted_test:
+    if scripted_test and access_test:
+        test_clock += delta
+        travel = 0.82
+    elif scripted_test:
         test_clock += delta
         # Lift/return to prove real boom actuation, then push with the toe
         # at its original contact height. The previous smoke program left

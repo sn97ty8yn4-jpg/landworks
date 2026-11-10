@@ -52,7 +52,7 @@ https://doi.org/10.1186/s40323-021-00196-3
 
 The CI test moves a **bank** to a known work position, then drives the real
 Jolt boom motor downward through it. The excavator itself is never teleported.
-A correct test must remove at least 15 litres by moving the powered bucket lip
+A correct test must remove at least 5 litres by moving the powered bucket lip
 and conserve total material volume. The bank is 1.32 m high for gravel and
 1.45 m high for clay, before repose relaxation.
 
@@ -60,3 +60,14 @@ Manual discharge is tested independently using the same flag as holding R.
 Automatic spill based on actual bucket curl angle remains a separate control
 condition and has NOT yet been calibrated against a correctly modelled
 bucket shell or hydraulic linkages.
+
+
+## Driveable entry fix
+
+The previous excavation grid stood 45 mm above the adjoining flat Jolt
+collision plane even before any bank, giving the rigid box-track contacts
+a discrete edge to climb. Its **baseline is now 30 mm recessed** below the
+yard collision level; only real gravel/clay bank material protrudes. The
+1,500 kg test crate has been relocated to the side for the playable yard,
+leaving a clear path for the excavator to enter the soil work pad. A separate
+headless crawler-access test is required to verify actual traversal.

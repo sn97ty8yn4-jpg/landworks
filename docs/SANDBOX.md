@@ -124,3 +124,10 @@ fallbacks. The excavator remains a carefully proportioned conceptual model,
 not an OEM CAD replica. Its collision bucket is a simpler proxy than its
 visible shell, and its telescoping hydraulic cylinders are visual until
 cylinder force/kinematic coupling is calibrated.
+
+
+**Excavation-pad access:** the revised Jolt soil pad is recessed flush with
+the surrounding yard; the permanent heavy crate is stationed at the side
+rather than blocking the direct crawler lane. Enter roughly along negative Z
+from the excavator start. Collisions are still physical; mound slopes and
+insufficient track traction can stop the machine.

@@ -5,7 +5,11 @@ extends Node3D
 const N := 41
 const CELL := 0.45
 const HALF := 20
-const BASE_HEIGHT := 0.045
+# Recess the unloaded heightmap 3 cm below the flat Jolt yard.
+# Previously the 45mm collision lip at the boundary could arrest rigid
+# box-track edges; the inset permits a level ingress, while real banks still
+# rise naturally above the yard.
+const BASE_HEIGHT := -0.03
 const MAX_PARTICLES := 240
 const PARCEL_M3 := 0.0045
 const MAX_BUCKET_M3 := 0.24

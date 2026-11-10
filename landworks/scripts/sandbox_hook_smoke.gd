@@ -13,6 +13,10 @@ func _run(sandbox: Node3D) -> void:
     await process_frame
     # The initial 1500kg crate is deliberately within 1.6 m of the bucket
     # hook. Being attachable does not imply the arm has sufficient lifting torque.
+    # Hook smoke separately stages a load within capture range. The playable
+    # entry lane is left clear of the permanent 1500kg sandbox crate.
+    sandbox.digger.test_mass.global_position = sandbox.digger.bucket.to_global(
+        Vector3(0, 0, -sandbox.digger.BUCKET_LENGTH)) + Vector3.DOWN * 0.50
     var status: String = sandbox.digger.toggle_hook(sandbox.props)
     if not is_instance_valid(sandbox.digger.load_hook_joint):
         push_error("SANDBOX_HOOK_FAIL: " + status)

@@ -213,6 +213,10 @@ func _build_loose_objects() -> void:
     _make_prop("Crate_650kg", 650.0, Vector3(11, 0.60, -7), 0.57, false, Color("#ad8f65"))
     _make_prop("Clay_Test_Block_650kg", 650.0, Vector3(27, 0.60, -11), 0.57, false, Color("#ab9073"))
     props.append(digger.test_mass) # Existing 1,500 kg free crate from tested rig
+    if not smoke:
+        # Keep the direct north-to-south crawler entrance unobstructed.
+        # The 1.5t crate still exists to push and drag on the far-right pad.
+        digger.test_mass.global_position = Vector3(7.0, 0.63, -8.0)
 
 func _build_environment() -> void:
     var sun := DirectionalLight3D.new()
