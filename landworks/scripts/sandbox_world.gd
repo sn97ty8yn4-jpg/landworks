@@ -23,6 +23,10 @@ var digger: Node3D
 var props: Array[RigidBody3D] = []
 var prop_surfaces: Dictionary = {}
 var camera: Camera3D
+var cab
+var in_cab := false
+var cab_toggle_down := false
+var hud_bg: ColorRect
 var status: Label
 var active_machine := 0
 var toggle_down := false
@@ -170,6 +174,7 @@ func _build_machines() -> void:
     visual_shell.name = "DetailedKubotaVisuals_ArtOnly"
     add_child(visual_shell)
     visual_shell.attach_to(tractor,digger)
+    cab = visual_shell.cab
 
 func _build_earthworks() -> void:
     earth = EARTH.new()
@@ -268,6 +273,7 @@ func _build_ui() -> void:
     add_child(canvas)
     var bg := ColorRect.new()
     bg.name = "CompactGlassHUD"
+    hud_bg = bg
     bg.color = Color(0.045,0.085,0.084,0.76)
     bg.size = Vector2(565,111)
     bg.position = Vector2(14,14)
@@ -282,14 +288,16 @@ func _build_ui() -> void:
     help_panel.name = "ControlsHelp"
     help_panel.color = Color(0.035,0.075,0.074,0.91)
     help_panel.position = Vector2(14,138)
-    help_panel.size = Vector2(600,186)
+    help_panel.size = Vector2(660,232)
     help_panel.visible = false
     canvas.add_child(help_panel)
     var instructions := Label.new()
     instructions.position = Vector2(14,12)
     instructions.add_theme_font_size_override("font_size",15)
     instructions.add_theme_color_override("font_color",Color("#f9ecd5"))
-    instructions.text = "LANDWORKS  •  CONTROLS\n" +         "Tab / Triangle — change machine     Z/C — orbit camera\n" +         "Tractor: W/S travel, A/D steer; PS R2/L2 travel + left stick\n" +         "Excavator: W/S tracks, A/D differential pivot\n" +         "I/K boom  |  O/L stick  |  P/; bucket  |  Q/E slew\n" +         "G / Square — bucket hook     R — dump soil     F12 — old yard\n" +         "F1 — close help"
+    instructions.text = "LANDWORKS  •  CONTROLS\n" +         "Tab / Triangle — change machine     Z/C — orbit camera\n" +         "Tractor: W/S travel, A/D steer; PS R2/L2 travel + left stick\n" +         "Excavator: W/S tracks, A/D differential pivot\n" +         "I/K boom  |  O/L stick  |  P/; bucket  |  Q/E slew\n" +         "G / Square — bucket hook     R — dump soil     F12 — old yard\n" +         "V — KX080 cab / follow view  |  Arrows/Z/C — look  |  H/J — lean\n" +
+        "M — mouse look  |  Esc — release cursor  |  Home — centre\n" +
+        "F1 — close help"
     help_panel.add_child(instructions)
 
 func _select_machine(which: int) -> void:
@@ -300,6 +308,8 @@ func _select_machine(which: int) -> void:
     orbit_yaw = 0.72 if which == 0 else -0.94
     tractor.controlled = which == 0 and not smoke
     digger.operated = which == 1 and not smoke
+    if which != 1 and in_cab:
+        _set_cab_view(false)
 
 func _current_surface(x: float) -> Dictionary:
     return SOIL.profile("soft_clay" if x > CLAY_START_X else "hardpack")
@@ -418,6 +428,29 @@ func _finish_smoke() -> void:
     print("LANDWORKS_SANDBOX_TEST_COMPLETE ", _out("sandbox_summary.csv"))
     get_tree().quit(0)
 
+func _set_cab_view(enabled: bool) -> void:
+    in_cab = enabled and active_machine == 1 and not smoke
+    if cab != null:
+        cab.set_seated(in_cab)
+        if in_cab:
+            cab.reset_look()
+    camera.current = not in_cab
+    if not in_cab:
+        Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+func _unhandled_input(event: InputEvent) -> void:
+    if not in_cab:
+        return
+    if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+        cab.adjust_look(-event.relative.x * 0.095, -event.relative.y * 0.095)
+    elif event is InputEventKey and event.pressed and not event.echo:
+        if event.keycode == KEY_M:
+            Input.mouse_mode = (Input.MOUSE_MODE_VISIBLE
+                if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+                else Input.MOUSE_MODE_CAPTURED)
+        elif event.keycode == KEY_ESCAPE:
+            Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
 func _process(delta: float) -> void:
     if not smoke:
         var help_pressed := Input.is_key_pressed(KEY_F1)
@@ -434,6 +467,10 @@ func _process(delta: float) -> void:
             get_tree().change_scene_to_file("res://landworks/scenes/test_yard.tscn")
             return
         legacy_down = go_legacy
+        var cab_toggle := Input.is_key_pressed(KEY_V)
+        if cab_toggle and not cab_toggle_down and active_machine == 1:
+            _set_cab_view(not in_cab)
+        cab_toggle_down = cab_toggle
         var joy := CI.joy_id()
         var hook_pressed := active_machine == 1 and (
             Input.is_key_pressed(KEY_G) or
@@ -441,18 +478,36 @@ func _process(delta: float) -> void:
         if hook_pressed and not hook_down:
             hook_status = digger.toggle_hook(props)
         hook_down = hook_pressed
-        if active_machine == 0:
-            orbit_yaw -= CI.axis(joy, JOY_AXIS_RIGHT_X) * delta * 1.4
-        orbit_yaw += (float(Input.is_key_pressed(KEY_C)) -
-            float(Input.is_key_pressed(KEY_Z))) * delta * 1.2
+        if in_cab and cab != null:
+            var turn_head := (
+                float(Input.is_key_pressed(KEY_RIGHT)) -
+                float(Input.is_key_pressed(KEY_LEFT)) +
+                float(Input.is_key_pressed(KEY_C)) -
+                float(Input.is_key_pressed(KEY_Z)))
+            var tilt_head := (float(Input.is_key_pressed(KEY_UP)) -
+                float(Input.is_key_pressed(KEY_DOWN)))
+            cab.adjust_look(turn_head * delta * 75.0, tilt_head * delta * 60.0)
+            cab.set_lean((float(Input.is_key_pressed(KEY_J)) -
+                float(Input.is_key_pressed(KEY_H))) * 0.12)
+            if Input.is_key_pressed(KEY_HOME):
+                cab.reset_look()
+        else:
+            if active_machine == 0:
+                orbit_yaw -= CI.axis(joy, JOY_AXIS_RIGHT_X) * delta * 1.4
+            orbit_yaw += (float(Input.is_key_pressed(KEY_C)) -
+                float(Input.is_key_pressed(KEY_Z))) * delta * 1.2
     var target: Node3D = tractor if active_machine == 0 else digger.undercarriage
-    var focus := target.global_position + (
-        Vector3(0,0.65,-0.20) if active_machine == 0 else Vector3(0,1.30,-1.45))
-    var dist := 5.90 if active_machine == 0 else 8.75
-    var height := 2.50 if active_machine == 0 else 3.50
-    var wanted := focus + Vector3(sin(orbit_yaw) * dist, height, cos(orbit_yaw) * dist)
-    camera.global_position = camera.global_position.lerp(wanted, clampf(delta * 4.5, 0.0, 1.0))
-    camera.look_at(focus, Vector3.UP)
+    if not in_cab:
+        var focus := target.global_position + (
+            Vector3(0,0.65,-0.20) if active_machine == 0 else Vector3(0,1.30,-1.45))
+        var dist := 5.90 if active_machine == 0 else 8.75
+        var height := 2.50 if active_machine == 0 else 3.50
+        var wanted := focus + Vector3(sin(orbit_yaw) * dist, height, cos(orbit_yaw) * dist)
+        camera.global_position = camera.global_position.lerp(wanted, clampf(delta * 4.5, 0.0, 1.0))
+        camera.look_at(focus, Vector3.UP)
+    hud_bg.position = (Vector2(14, get_viewport().get_visible_rect().size.y - 126)
+        if in_cab else Vector2(14,14))
+    status.position = hud_bg.position + Vector2(11,9)
     var speed: float = tractor.linear_velocity.length() * 3.6
     var ground_label: String = str(_current_surface(target.global_position.x)["name"])
     if active_machine == 0:
@@ -461,10 +516,11 @@ func _process(delta: float) -> void:
             speed, tractor.last_hst_power_kw,ground_label]
         status.text += "400 kg trailer  •  Tab switch machine  •  F1 controls"
     else:
-        status.text = "KUBOTA KX080-3  •  EARTHMOVING\n"
+        status.text = ("KUBOTA KX080-3  •  SEATED VIEW\n" if in_cab
+            else "KUBOTA KX080-3  •  EARTHMOVING\n")
         status.text += "Hyd %.1f MPa  |  %.1f L/min  |  Ground %d/4\n" % [
             float(digger.hydraulic_state.get("pressure_mpa",0.0)),
             float(digger.hydraulic_state.get("flow_lpm",0.0)),
             digger.ground_contact_count]
-        status.text += "Bucket %.0f L  |  Dug %.0f L  |  F1 controls" % [
+        status.text += "Bucket %.0f L  |  Dug %.0f L  |  V view  F1 help" % [
             soil_bucket_m3*1000.0,maximum_excavated_m3*1000.0]
