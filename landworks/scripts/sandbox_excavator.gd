@@ -5,6 +5,8 @@ extends "res://landworks/scripts/excavator_work_lab.gd"
 
 const INPUTS = preload("res://landworks/scripts/machine_input.gd")
 
+var cab_input := {"boom": 0.0, "stick": 0.0, "bucket": 0.0,
+    "slew": 0.0, "left_track": 0.0, "right_track": 0.0}
 var operated := false
 var scripted_test := false
 var access_test := false
@@ -111,3 +113,8 @@ func _physics_process(delta: float) -> void:
     var left_speed := clampf((travel - turn) * 0.70, -0.80, 0.80)
     var right_speed := clampf((travel + turn) * 0.70, -0.80, 0.80)
     _drive_tracks(left_speed, right_speed)
+    # Publish the exact same control demands used by the machine solver.
+    # Decorative cab levers must not sample a second, divergent input path.
+    cab_input = {"boom": boom_cmd, "stick": stick_cmd,
+        "bucket": bucket_cmd, "slew": slew_cmd,
+        "left_track": left_speed / 0.80, "right_track": right_speed / 0.80}
