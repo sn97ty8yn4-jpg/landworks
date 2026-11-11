@@ -37,4 +37,22 @@ func _capture(sandbox: Node3D) -> void:
             quit(3)
             return
         print("RENDERED_FRAME_OK ",target," ",shot.get_width(),"x",shot.get_height())
+    # Separate real-engine seated screenshot: verifies operator eye placement,
+    # cab framing, sightline and HUD without forcing photo-only rendering.
+    sandbox._select_machine(1)
+    sandbox._set_cab_view(true)
+    for n in range(24):
+        await process_frame
+    await RenderingServer.frame_post_draw
+    var cab_image := root.get_texture().get_image()
+    if cab_image == null or cab_image.get_width() < 1000:
+        push_error("Invalid seated cab screenshot")
+        quit(4)
+        return
+    var cab_target := output.path_join("landworks_kx080_cab.png")
+    if cab_image.save_png(cab_target) != OK:
+        push_error("Unable to save cab screenshot")
+        quit(5)
+        return
+    print("RENDERED_FRAME_OK ",cab_target," ",cab_image.get_width(),"x",cab_image.get_height())
     quit(0)
