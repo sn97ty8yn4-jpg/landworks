@@ -3,6 +3,8 @@
 # engine forces, track patches or soil cutting. Not OEM CAD nor exact scan.
 extends Node3D
 
+const CAB = preload("res://landworks/scripts/excavator_cab.gd")
+
 const TRACTOR_ORANGE := Color("#ed7a16")
 const ORANGE_HIGHLIGHT := Color("#ff9c34")
 const ORANGE_SHADOW := Color("#b95711")
@@ -15,6 +17,7 @@ const LIGHT := Color("#f3e4be")
 
 var tractor: RigidBody3D
 var excavator: Node3D
+var cab: Node3D
 var cylinders: Array[Dictionary] = []
 var parts_count := 0
 var glass_mat: StandardMaterial3D
@@ -27,6 +30,8 @@ func attach_to(tractor_machine: RigidBody3D, digger: Node3D) -> void:
     _init_materials()
     _dress_tractor()
     _dress_excavator()
+    cab = CAB.new()
+    excavator.upper.add_child(cab)
     print("LANDWORKS_MACHINE_ART_READY pieces=", parts_count,
         " cylinders=", cylinders.size())
 
@@ -232,21 +237,24 @@ func _tractor_operator(root: Node3D) -> void:
 func _excavator_operator(root: Node3D) -> void:
     # Hand-painted silhouette visible behind the cab glass. The cabin
     # is still a visual shell; no human collision mass is introduced.
+    var avatar := Node3D.new()
+    avatar.name = "CabOperatorAvatar"
+    root.add_child(avatar)
     var coat := Color("#8d9681")
     var skin := Color("#e5b79c")
-    _box(root,Vector3(0.36,0.43,0.25),
+    _box(avatar,Vector3(0.36,0.43,0.25),
         Vector3(-0.50,2.18,-0.24),coat)
-    _sphere(root,Vector3(-0.50,2.51,-0.24),
+    _sphere(avatar,Vector3(-0.50,2.51,-0.24),
         Vector3(0.15,0.18,0.15),skin)
-    _sphere(root,Vector3(-0.50,2.66,-0.25),
+    _sphere(avatar,Vector3(-0.50,2.66,-0.25),
         Vector3(0.18,0.09,0.17),DARK)
     for x in [-0.67,-0.33]:
-        _rod(root,Vector3(x,2.27,-0.24),
+        _rod(avatar,Vector3(x,2.27,-0.24),
             Vector3(x,1.95,-0.65),0.063,coat)
-        _sphere(root,Vector3(x,1.95,-0.65),
+        _sphere(avatar,Vector3(x,1.95,-0.65),
             Vector3(0.065,0.061,0.068),skin)
     for x in [-0.66,-0.34]:
-        _box(root,Vector3(0.055,0.23,0.055),
+        _box(avatar,Vector3(0.055,0.23,0.055),
             Vector3(x,1.97,-0.73),DARK)
 
 func _dress_excavator() -> void:
@@ -311,8 +319,9 @@ func _dress_excavator() -> void:
             Vector3(-0.49,2.96,z),DARK)
     # Windscreen, rear screen, full left door glass and right window.
     for z in [-0.938,0.246]:
-        _box(upper,Vector3(0.77,0.82,0.018),
+        var pane := _box(upper,Vector3(0.77,0.82,0.018),
             Vector3(-0.49,2.48,z),GLASS)
+        pane.name = "CabFrontWindow" if z < 0.0 else "CabRearWindow"
     for x in [-0.962,-0.021]:
         _box(upper,Vector3(0.018,0.84,1.05),
             Vector3(x,2.48,-0.35),GLASS)
