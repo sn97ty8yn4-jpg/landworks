@@ -237,10 +237,16 @@ func _process(delta: float) -> void:
     # Right joystick is boom fore/aft plus bucket side-to-side.
     # Controller mapping is separate: the controls always reflect actual
     # hydraulic/track commands supplied by the machine.
-    left_stick.rotation.x = deg_to_rad(JOYSTICK_TILT_DEG) * float(smoothed["stick"])
-    left_stick.rotation.z = -deg_to_rad(JOYSTICK_TILT_DEG) * float(smoothed["slew"])
-    right_stick.rotation.x = deg_to_rad(JOYSTICK_TILT_DEG) * float(smoothed["boom"])
-    right_stick.rotation.z = -deg_to_rad(JOYSTICK_TILT_DEG) * float(smoothed["bucket"])
+    # Radial limits reproduce a circular joystick gate: simultaneous
+    # commands cannot force a larger diagonal tilt than the max stroke.
+    var left_axes := Vector2(float(smoothed["slew"]),
+        float(smoothed["stick"])).limit_length(1.0)
+    var right_axes := Vector2(float(smoothed["bucket"]),
+        float(smoothed["boom"])).limit_length(1.0)
+    left_stick.rotation.x = deg_to_rad(JOYSTICK_TILT_DEG) * left_axes.y
+    left_stick.rotation.z = -deg_to_rad(JOYSTICK_TILT_DEG) * left_axes.x
+    right_stick.rotation.x = deg_to_rad(JOYSTICK_TILT_DEG) * right_axes.y
+    right_stick.rotation.z = -deg_to_rad(JOYSTICK_TILT_DEG) * right_axes.x
     left_travel_lever.rotation.x = -deg_to_rad(TRAVEL_LEVER_TILT_DEG) * float(smoothed["left_track"])
     right_travel_lever.rotation.x = -deg_to_rad(TRAVEL_LEVER_TILT_DEG) * float(smoothed["right_track"])
     left_travel_pedal.rotation.x = -deg_to_rad(TRAVEL_PEDAL_TILT_DEG) * float(smoothed["left_track"])
