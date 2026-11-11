@@ -55,4 +55,22 @@ func _capture(sandbox: Node3D) -> void:
         quit(5)
         return
     print("RENDERED_FRAME_OK ",cab_target," ",cab_image.get_width(),"x",cab_image.get_height())
+    # A downward glance should show both physical-hand/control positions,
+    # independent crawler levers and both travel pedal rockers.
+    sandbox.cab.adjust_look(0.0, -33.0)
+    for n in range(24):
+        await process_frame
+    await RenderingServer.frame_post_draw
+    var controls_image := root.get_texture().get_image()
+    if controls_image == null or controls_image.get_width() < 1000:
+        push_error("Invalid operator controls screenshot")
+        quit(6)
+        return
+    var controls_target := output.path_join("landworks_kx080_controls.png")
+    if controls_image.save_png(controls_target) != OK:
+        push_error("Unable to save operator controls screenshot")
+        quit(7)
+        return
+    print("RENDERED_FRAME_OK ",controls_target," ",
+        controls_image.get_width(),"x",controls_image.get_height())
     quit(0)
