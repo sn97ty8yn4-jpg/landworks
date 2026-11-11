@@ -63,7 +63,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import struct
-          for name in ['landworks_tractor.png','landworks_excavator.png','landworks_kx080_cab.png']:
+          for name in ['landworks_tractor.png','landworks_excavator.png','landworks_kx080_cab.png','landworks_kx080_controls.png']:
               f=Path('ci-visuals')/name
               b=f.read_bytes()
               assert b[:8] == b'\x89PNG\r\n\x1a\n'
