@@ -71,6 +71,17 @@ jobs:
       - name: Validate hydraulic pump flow/pressure bounds in Godot
         run: godot --headless --path . --script res://landworks/scripts/hydraulic_smoke.gd
 
+      - name: Verify seated KX080 cab control rig
+        shell: bash
+        run: |
+          set -o pipefail
+          timeout 35s godot --headless --path . --script res://landworks/scripts/cab_control_smoke.gd 2>&1 | tee ci-logs/kx080-cab.log
+          grep 'KX080_CAB_SMOKE PASS' ci-logs/kx080-cab.log
+          if grep -E 'SCRIPT ERROR:|Parse Error:|Failed to load script|Invalid type in function' ci-logs/kx080-cab.log; then
+            echo "::error::KX080 operator rig runtime error"
+            exit 1
+          fi
+
       - name: Run and parse main yard
         shell: bash
         run: |
