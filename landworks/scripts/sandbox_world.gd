@@ -295,9 +295,7 @@ func _build_ui() -> void:
     instructions.position = Vector2(14,12)
     instructions.add_theme_font_size_override("font_size",15)
     instructions.add_theme_color_override("font_color",Color("#f9ecd5"))
-    instructions.text = "LANDWORKS  •  CONTROLS\n" +         "Tab / Triangle — change machine     Z/C — orbit camera\n" +         "Tractor: W/S travel, A/D steer; PS R2/L2 travel + left stick\n" +         "Excavator: W/S tracks, A/D differential pivot\n" +         "I/K boom  |  O/L stick  |  P/; bucket  |  Q/E slew\n" +         "G / Square — bucket hook     R — dump soil     F12 — old yard\n" +         "V — KX080 cab / follow view  |  Arrows/Z/C — look  |  H/J — lean\n" +
-        "M — mouse look  |  Esc — release cursor  |  Home — centre\n" +
-        "F1 — close help"
+    instructions.text = "LANDWORKS  •  CONTROLS\n" +         "Tab / Triangle — change machine     Z/C — orbit camera\n" +         "Tractor: W/S travel, A/D steer; PS R2/L2 travel + left stick\n" +         "Excavator: W/S tracks, A/D differential pivot\n" +         "I/K boom  |  O/L stick  |  P/; bucket  |  Q/E slew\n" +         "G / Square — bucket hook     R — dump soil     F12 — old yard\n" +         "V — KX080 cab / follow view  |  Arrows/Z/C — look  |  H/J — lean\n" +         "M — mouse look  |  Esc — release cursor  |  Home — centre\n" +         "F1 — close help"
     help_panel.add_child(instructions)
 
 func _select_machine(which: int) -> void:
