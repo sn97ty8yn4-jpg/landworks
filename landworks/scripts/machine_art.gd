@@ -66,7 +66,10 @@ void fragment() {
     ink_mat.shader = ink_shader
     glass_mat = _paint(Color("#7fadb1"), 0.12, 0.18)
     glass_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-    glass_mat.albedo_color.a = 0.46
+    # Thin window tint without thick toon silhouette on transparent panels.
+    # The earlier 46% opacity darkened much of the operator's side view.
+    glass_mat.albedo_color.a = 0.15
+    glass_mat.next_pass = null
     metal_mat = _paint(STEEL, 0.60, 0.36)
 
 func _box(parent: Node3D, size: Vector3, p: Vector3,
