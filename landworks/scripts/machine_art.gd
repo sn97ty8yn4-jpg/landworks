@@ -393,6 +393,8 @@ func _position_rod(node: MeshInstance3D, a: Vector3, b: Vector3) -> void:
     mesh.height = span.length()
 
 func _process(_delta: float) -> void:
+    if cab != null and is_instance_valid(excavator):
+        cab.set_commands(excavator.cab_input)
     for c in cylinders:
         var a: Node3D = c["a"]
         var b: Node3D = c["b"]
