@@ -1,0 +1,64 @@
+{
+  "project": "Durham Park Sandbox",
+  "pack_version": "prototype_01",
+  "assets": [
+    {
+      "path": "assets/00_far_sky_panorama_2to1.png",
+      "description": "Distant ridges, sky and pastoral landscape; RGB; reference map for Sky panorama.",
+      "layer": "Background panorama",
+      "dimensions_px": [
+        1774,
+        887
+      ],
+      "mode": "RGB",
+      "has_alpha": false,
+      "sha256": "68c76f870e15d6ae79fc7a6ba468152eddb6b6e027d525155123f5bff43aa0de",
+      "source_filename": "golden_panorama_of_hunter_valley_farmland.png"
+    },
+    {
+      "path": "assets/03_parallax_far_wooded_hills.png",
+      "description": "Wooded hill band and ridgelines; RGBA, approximate 1-2 km apparent distance.",
+      "layer": "Far-medium parallax",
+      "dimensions_px": [
+        2172,
+        724
+      ],
+      "mode": "RGBA",
+      "has_alpha": true,
+      "sha256": "9723699462590eaffcc6ca12ff63895301141f64a30ff82ff9638bbdd0a561e6",
+      "source_filename": "golden_hillside_farm_panorama.png"
+    },
+    {
+      "path": "assets/02_parallax_middle_pastures.png",
+      "description": "Pastures, treelines and farm structures; RGBA, approximate 600 m-1.5 km apparent distance.",
+      "layer": "Middle parallax",
+      "dimensions_px": [
+        2172,
+        724
+      ],
+      "mode": "RGBA",
+      "has_alpha": true,
+      "sha256": "3aa450c0ba4ffb0f7ff709ae5331fcc339f9ebdd7f21c50b09b4c3dac07276fb",
+      "source_filename": "painterly_australian_countryside_parallax_layer.png"
+    },
+    {
+      "path": "assets/01_parallax_near_farms_treelines.png",
+      "description": "Tree clusters, sheds, dams and paddock edges; RGBA, approximate 300-800 m apparent distance.",
+      "layer": "Near-medium parallax",
+      "dimensions_px": [
+        2172,
+        724
+      ],
+      "mode": "RGBA",
+      "has_alpha": true,
+      "sha256": "56cd0a72a10b1e2b739724418d39a7e0c60286edba78589a6d2168f7f02cb986",
+      "source_filename": "golden_hunter_valley_countryside_parallax_strip.png"
+    }
+  ],
+  "validation": {
+    "images_verified": true,
+    "alpha_verified": true,
+    "seamless_360_verified": false,
+    "godot_integration_tested": false
+  }
+}

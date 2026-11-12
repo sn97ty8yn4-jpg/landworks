@@ -54,6 +54,9 @@ def main() -> int:
         return 2
     output=Path(a.out).resolve()
     output.mkdir(parents=True,exist_ok=True)
+    # Telemetry is not a Godot translation asset. Prevent concurrent editor
+    # imports from trying to read CSV files while the simulator writes them.
+    (output / '.gdignore').touch()
     cases= list(CASE_SCENES) if a.case=='all' else [a.case]
     for case in cases:
         scene=CASE_SCENES[case]

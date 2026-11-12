@@ -11,7 +11,7 @@ const TRAILER = preload("res://landworks/scripts/work_trailer.gd")
 const SOIL = preload("res://landworks/scripts/ground_response.gd")
 const EARTH = preload("res://landworks/scripts/earthworks.gd")
 const ART = preload("res://landworks/scripts/art_scene.gd")
-const MACHINE_ART = preload("res://landworks/scripts/machine_art.gd")
+const MACHINE_ART = preload("res://landworks/scripts/engineered_machine_art.gd")
 
 const SMOKE_DURATION_S := 21.0
 const CLAY_START_X := 18.0
@@ -62,6 +62,14 @@ var tip_previous_m3 := 0.0
 var spoil_dump_request := false
 var soil_mass_error_m3 := 0.0
 var earthwork_start_m3 := 0.0
+var machine_visuals: Node3D
+var camera_zoom := 1.0
+var inspection_view := false
+var inspection_down := false
+var pending_soil_contact: Dictionary = {}
+var bucket_empty_mass := 0.0
+var bucket_empty_center := Vector3.ZERO
+var material_diagnostic_clock := 0.0
 
 func _ready() -> void:
     for arg in OS.get_cmdline_user_args():
@@ -103,17 +111,21 @@ func _build_terrain() -> void:
     var floor := StaticBody3D.new()
     floor.name = "SolidGround_140m"
     add_child(floor)
-    var shape := BoxShape3D.new()
-    shape.size = Vector3(140, 1.0, 140)
-    var collider := CollisionShape3D.new()
-    collider.shape = shape
-    collider.position.y = -0.5
-    floor.add_child(collider)
+    # The mutable 18 m pad is centred at (0, -12). Leave its footprint
+    # open: a full yard box here would support machines above every trench.
+    for region in [Rect2(-70, -70, 61, 140), Rect2(9, -70, 61, 140),
+            Rect2(-9, -70, 18, 49), Rect2(-9, -3, 18, 73)]:
+        var shape := BoxShape3D.new()
+        shape.size = Vector3(region.size.x, 1.0, region.size.y)
+        var collider := CollisionShape3D.new()
+        collider.shape = shape
+        var center: Vector2 = region.get_center()
+        collider.position = Vector3(center.x, -0.5, center.y)
+        floor.add_child(collider)
     var physics := PhysicsMaterial.new()
     physics.friction = 0.82
     floor.physics_material_override = physics
-    # Flat Jolt supporting plane remains at exact y=0. Painterly ground is
-    # purely visual and never changes the tyre or track-contact calculations.
+    # Outside the mutable footprint, the yard remains at exactly y=0.
 
 func _build_painted_world() -> void:
     var decor: Node3D = ART.new()
@@ -166,17 +178,21 @@ func _build_machines() -> void:
     digger = E.new()
     digger.name = "Excavator"
     add_child(digger)
-    var visual_shell: Node3D = MACHINE_ART.new()
-    visual_shell.name = "DetailedKubotaVisuals_ArtOnly"
-    add_child(visual_shell)
-    visual_shell.attach_to(tractor,digger)
+    machine_visuals = MACHINE_ART.new()
+    machine_visuals.name = "CustomEngineeredMachineVisuals"
+    add_child(machine_visuals)
+    machine_visuals.attach_to(tractor,digger)
 
 func _build_earthworks() -> void:
     earth = EARTH.new()
+    earth.material_mechanics = true
+    for argument in OS.get_cmdline_user_args():
+        if argument == "--legacy-soil": earth.material_mechanics = false
     earth.name = "GranularExcavationPad_GravelAndClay"
     earth.position = Vector3(0, 0, -12)
     add_child(earth)
     earthwork_start_m3 = earth.ground_volume_m3()
+    bucket_empty_mass = digger.bucket.mass
 
 func _make_prop(name: String, kg: float, location: Vector3,
         radius: float, cylinder: bool, tint: Color) -> void:
@@ -231,27 +247,19 @@ func _build_environment() -> void:
     add_child(sun)
     var world := WorldEnvironment.new()
     var env := Environment.new()
-    var painted_sky := ProceduralSkyMaterial.new()
-    painted_sky.sky_top_color = Color("#478db9")
-    painted_sky.sky_horizon_color = Color("#b3d4d3")
-    painted_sky.ground_horizon_color = Color("#c4c2a4")
-    painted_sky.ground_bottom_color = Color("#8a956c")
-    painted_sky.sun_angle_max = 22.0
-    var sky := Sky.new()
-    sky.sky_material = painted_sky
     env.background_mode = Environment.BG_SKY
-    env.sky = sky
+    env.sky = ART.BACKDROP.make_sky()
     env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
     env.ambient_light_energy = 0.43
     env.fog_enabled = true
     env.fog_light_color = Color("#d3d8c2")
-    env.fog_density = 0.0012
-    env.fog_sky_affect = 0.25
+    env.fog_density = 0.00035
+    env.fog_sky_affect = 0.0
     env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
     env.adjustment_enabled = true
-    env.adjustment_brightness = 0.87
-    env.adjustment_saturation = 1.22
-    env.adjustment_contrast = 1.14
+    env.adjustment_brightness = 1.0
+    env.adjustment_saturation = 1.0
+    env.adjustment_contrast = 1.0
     world.environment = env
     add_child(world)
     camera = Camera3D.new()
@@ -259,7 +267,7 @@ func _build_environment() -> void:
     add_child(camera)
     camera.current = true
     camera.fov = 65.0
-    camera.far = 270.0
+    camera.far = 2800.0
     camera.position = tractor.position + Vector3(7, 5, 8)
 
 func _build_ui() -> void:
@@ -282,17 +290,21 @@ func _build_ui() -> void:
     help_panel.name = "ControlsHelp"
     help_panel.color = Color(0.035,0.075,0.074,0.91)
     help_panel.position = Vector2(14,138)
-    help_panel.size = Vector2(600,186)
+    help_panel.size = Vector2(650,212)
     help_panel.visible = false
     canvas.add_child(help_panel)
     var instructions := Label.new()
     instructions.position = Vector2(14,12)
     instructions.add_theme_font_size_override("font_size",15)
     instructions.add_theme_color_override("font_color",Color("#f9ecd5"))
-    instructions.text = "LANDWORKS  •  CONTROLS\n" +         "Tab / Triangle — change machine     Z/C — orbit camera\n" +         "Tractor: W/S travel, A/D steer; PS R2/L2 travel + left stick\n" +         "Excavator: W/S tracks, A/D differential pivot\n" +         "I/K boom  |  O/L stick  |  P/; bucket  |  Q/E slew\n" +         "G / Square — bucket hook     R — dump soil     F12 — old yard\n" +         "F1 — close help"
+    instructions.text = "LANDWORKS  •  CONTROLS\n" +         "Tab / Triangle — change machine     Z/C — orbit camera\n" +         "Tractor: W/S travel, A/D steer; PS R2/L2 travel + left stick\n" +         "Excavator: W/S tracks, A/D differential pivot\n" +         "I/K boom  |  O/L stick  |  P/; bucket  |  Q/E slew\n" +         "G / Square — bucket hook     R — dump soil     F12 — old yard\n" +         "Mouse wheel — zoom     F2 — inspection view     F1 — close help"
+    instructions.text += "\nV — cab/follow   Arrows / right-drag — look   Home — centre"
     help_panel.add_child(instructions)
 
 func _select_machine(which: int) -> void:
+    if machine_visuals != null and machine_visuals.cab != null:
+        machine_visuals.cab.set_seated(false)
+        camera.current = true
     active_machine = which
     # Switch to the left-front quarter when operating the excavator: it
     # shows its boom silhouette, side cab glazing and seated driver,
@@ -300,6 +312,24 @@ func _select_machine(which: int) -> void:
     orbit_yaw = 0.72 if which == 0 else -0.94
     tractor.controlled = which == 0 and not smoke
     digger.operated = which == 1 and not smoke
+    camera_zoom = 1.0
+
+func _unhandled_input(event: InputEvent) -> void:
+    var cab: Node3D = machine_visuals.cab
+    if event is InputEventKey and event.pressed and not event.echo:
+        if event.keycode == KEY_V and active_machine == 1:
+            cab.set_seated(not cab.seated)
+            if not cab.seated: camera.current = true
+        if event.keycode == KEY_HOME: cab.reset_look()
+    if cab.seated:
+        if event is InputEventMouseMotion and event.button_mask & MOUSE_BUTTON_MASK_RIGHT:
+            cab.look(-event.relative.x*0.12,-event.relative.y*0.12)
+        return
+    if event is InputEventMouseButton and event.pressed:
+        if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+            camera_zoom = clampf(camera_zoom*0.88,0.48,1.65)
+        elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+            camera_zoom = clampf(camera_zoom/0.88,0.48,1.65)
 
 func _current_surface(x: float) -> Dictionary:
     return SOIL.profile("soft_clay" if x > CLAY_START_X else "hardpack")
@@ -353,6 +383,9 @@ func _physics_process(delta: float) -> void:
         _finish_smoke()
 
 func _update_earthworks(delta: float) -> void:
+    if earth.material_mechanics:
+        _update_material_mechanics(delta)
+        return
     # Engine-driven physical lip path: no soil is excavated by an animation or
     # player pressing a magical remove-soil button. The bucket must reach an
     # actual bank and move through it while below the soil surface.
@@ -398,6 +431,91 @@ func _update_earthworks(delta: float) -> void:
         maximum_dumped_m3 += released
     soil_mass_error_m3 = earth.ground_volume_m3() + soil_bucket_m3 +         earth.mobile_volume_m3() + earth.offsite_m3 - earthwork_start_m3
 
+func _cut_budget(lip: Vector3, direction: Vector3, delta: float) -> Dictionary:
+    var force := INF
+    var power := 0.0
+    var active := false
+    for key in ["boom","stick","bucket"]:
+        var speed := absf(float(digger.hydraulic_state.get("speeds",{}).get(key,0.0)))
+        if speed < 0.005: continue
+        active = true
+        var body: Node3D = digger.get(key)
+        var axis: Vector3 = body.global_basis.x.normalized()
+        var lever := absf((lip-body.global_position).cross(direction).dot(axis))
+        var torque := float(digger.hydraulic_state.get("torque_caps",{}).get(key,0.0))
+        force = minf(force,torque/maxf(lever,0.15))
+        power += torque*speed
+    power = minf(power,float(digger.hydraulic_state.get("hydraulic_power_kw",0.0))*1000.0)
+    return {"force":force if active else 0.0,"work":power*delta}
+
+func _update_material_mechanics(delta: float) -> void:
+    var lip: Vector3 = digger.bucket.to_global(Vector3(0,0,-digger.BUCKET_LENGTH))
+    if not previous_bucket_lip_valid:
+        var state := PhysicsServer3D.body_get_direct_state(digger.bucket.get_rid())
+        if state != null: bucket_empty_center = state.center_of_mass_local
+        previous_bucket_lip = lip
+        previous_bucket_lip_valid = true
+        return
+    var movement := lip-previous_bucket_lip
+    var room := maxf(0.0,earth.MAX_BUCKET_M3-earth.bucket_inventory.volume())
+    # Previous tick applied resistance. Commit only the measured solved path,
+    # never the predicted path, and never backward/unpowered/stalled motion.
+    if not pending_soil_contact.is_empty() and movement.length()>0.00001:
+        var direction: Vector3 = pending_soil_contact["direction"]
+        if movement.normalized().dot(direction)>0.5:
+            var proposal: Dictionary = earth.propose_cut(previous_bucket_lip,lip,0.76,room)
+            var result: Dictionary = earth.commit_cut(proposal,
+                float(pending_soil_contact["force"]),float(pending_soil_contact["work"]))
+            maximum_excavated_m3 += float(result["volume_m3"])
+    # Predict only to establish the next contact reaction; nothing is removed.
+    var arm: Vector3 = lip-digger.bucket.global_position
+    var velocity: Vector3 = digger.bucket.linear_velocity+digger.bucket.angular_velocity.cross(arm)
+    pending_soil_contact.clear()
+    if velocity.length()>0.001 and earth.has_position(lip) and room>0.00001:
+        var direction := velocity.normalized()
+        var proposal: Dictionary = earth.propose_cut(lip,lip+velocity*delta,0.76,room)
+        var resistance := float(proposal.get("force_n",0.0))
+        if resistance>0.0:
+            digger.bucket.apply_force(-direction*resistance,arm)
+            pending_soil_contact = _cut_budget(lip,direction,delta)
+            pending_soil_contact["direction"] = direction
+    previous_bucket_lip = lip
+    soil_bucket_material = earth.bucket_inventory.kind()
+    var manual_dump := spoil_dump_request or (not smoke and active_machine==1 and Input.is_key_pressed(KEY_R))
+    var opening: Vector3 = -digger.bucket.global_basis.y.normalized()
+    var gravity_release := maxf(0.0,opening.dot(Vector3.DOWN)-0.12)
+    var adhesion: float = earth.bucket_inventory.weighted("steel_adhesion_pa")
+    # Provisional contact area. Wet cohesive material discharges more slowly;
+    # R remains an explicit debugging override for sticky carryback.
+    var retained_force := adhesion*0.035
+    var weight: float = earth.bucket_inventory.mass()*9.81
+    var flow := 1.0 if manual_dump else gravity_release*clampf((weight-retained_force)/maxf(weight,1.0),0.0,1.0)
+    if flow>0.0:
+        var released: float = earth.release_soil(lip+Vector3.UP*0.14,
+            velocity,minf(earth.bucket_inventory.volume(),delta*0.115*flow),soil_bucket_material)
+        maximum_dumped_m3 += released
+    soil_bucket_m3 = earth.bucket_inventory.volume()
+    # Soil mass loads the real rigid body, preserving its instantaneous velocity.
+    # Detailed shell dimensions supply an approximate local contents centre.
+    var payload: float = earth.bucket_inventory.mass()
+    var new_mass := bucket_empty_mass+payload
+    var old_mass: float = digger.bucket.mass
+    if new_mass > old_mass:
+        # Captured bank soil starts at rest: conserve linear momentum when
+        # attaching it. Discharged parcels inherit the bucket's velocity.
+        digger.bucket.linear_velocity *= old_mass/new_mass
+    digger.bucket.mass = new_mass
+    if payload < 1e-6:
+        digger.bucket.center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_AUTO
+    else:
+        digger.bucket.center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
+        digger.bucket.center_of_mass = (bucket_empty_center*bucket_empty_mass+Vector3(0,0.20,-0.40)*payload)/new_mass
+    # Compatibility diagnostic only; new tests assert constituent kg directly.
+    material_diagnostic_clock += delta
+    if material_diagnostic_clock >= 0.5:
+        soil_mass_error_m3 = earth.mass_error_kg()/1700.0
+        material_diagnostic_clock = 0.0
+
 func _finish_smoke() -> void:
     smoke_file.close()
     var f := FileAccess.open(_out("sandbox_summary.csv"), FileAccess.WRITE)
@@ -419,6 +537,10 @@ func _finish_smoke() -> void:
     get_tree().quit(0)
 
 func _process(delta: float) -> void:
+    if machine_visuals.cab.seated:
+        machine_visuals.cab.look(
+            (float(Input.is_key_pressed(KEY_LEFT))-float(Input.is_key_pressed(KEY_RIGHT)))*delta*65.0,
+            (float(Input.is_key_pressed(KEY_UP))-float(Input.is_key_pressed(KEY_DOWN)))*delta*50.0)
     if not smoke:
         var help_pressed := Input.is_key_pressed(KEY_F1)
         if help_pressed and not help_down:
@@ -448,11 +570,24 @@ func _process(delta: float) -> void:
     var target: Node3D = tractor if active_machine == 0 else digger.undercarriage
     var focus := target.global_position + (
         Vector3(0,0.65,-0.20) if active_machine == 0 else Vector3(0,1.30,-1.45))
-    var dist := 5.90 if active_machine == 0 else 8.75
-    var height := 2.50 if active_machine == 0 else 3.50
+    if inspection_view and active_machine == 1:
+        focus.z -= 0.75
+    var inspect_pressed := Input.is_key_pressed(KEY_F2)
+    if inspect_pressed and not inspection_down:
+        inspection_view = not inspection_view
+        orbit_yaw = (-2.30 if active_machine == 0 else -1.95) if inspection_view else (0.72 if active_machine == 0 else -0.94)
+    inspection_down = inspect_pressed
+    var dist := (4.9 if active_machine == 0 else 7.9)*camera_zoom
+    var height := (1.65 if active_machine == 0 else 2.6)*camera_zoom
+    if inspection_view:
+        height = 0.65*camera_zoom
+        camera.fov = 46.0
+    else:
+        camera.fov = 58.0
     var wanted := focus + Vector3(sin(orbit_yaw) * dist, height, cos(orbit_yaw) * dist)
     camera.global_position = camera.global_position.lerp(wanted, clampf(delta * 4.5, 0.0, 1.0))
     camera.look_at(focus, Vector3.UP)
+    machine_visuals.update_bucket_fill(soil_bucket_m3,soil_bucket_material)
     var speed: float = tractor.linear_velocity.length() * 3.6
     var ground_label: String = str(_current_surface(target.global_position.x)["name"])
     if active_machine == 0:
@@ -468,3 +603,4 @@ func _process(delta: float) -> void:
             digger.ground_contact_count]
         status.text += "Bucket %.0f L  |  Dug %.0f L  |  F1 controls" % [
             soil_bucket_m3*1000.0,maximum_excavated_m3*1000.0]
+        status.text += "\nV: cab/follow  |  Soil %.0f kg" % earth.bucket_inventory.mass()

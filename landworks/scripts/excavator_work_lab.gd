@@ -136,6 +136,11 @@ func _make_ground_tracks() -> void:
         M.block(undercarriage, shape.size, c.position, Color("#222a2c"))
     M.block(undercarriage, Vector3(1.50, 0.28, 2.50), Vector3(0, 0.67, 0.03), Color("#43484b"))
 
+func _boom_base_pin() -> Vector3:
+    # The laboratory retains its original measured test geometry. The
+    # playable sandbox can provide a model-specific pin position.
+    return Vector3(0.48,2.12,-0.66)
+
 func _build_machine() -> void:
     _make_ground_tracks()
     upper = RigidBody3D.new()
@@ -161,7 +166,7 @@ func _build_machine() -> void:
         Vector3.UP, -PI, PI, _motor_impulse(SLEW_TORQUE_LIMIT_NM))
     slew_joint = hinges["slew"]["joint"]
     slew_joint.set_flag(HingeJoint3D.FLAG_USE_LIMIT, false)
-    var boom_pin := Vector3(0.48, 2.12, -0.66)
+    var boom_pin := _boom_base_pin()
     boom = _make_box("Boom_650kg", 650.0, boom_pin, 0.24,
         BOOM_LENGTH, 0.46, 0.46, Color("#f08820"))
     var stick_pin: Vector3 = boom.to_global(Vector3(0, 0, -BOOM_LENGTH))
@@ -183,6 +188,7 @@ func _build_machine() -> void:
         # in Jolt and the load never receives scripted movement.
         bucket.collision_mask = 3
         var toe := CollisionShape3D.new()
+        toe.name = "GroundHandlingToe"
         var toe_shape := BoxShape3D.new()
         toe_shape.size = Vector3(1.20, 0.94, 0.40)
         toe.shape = toe_shape

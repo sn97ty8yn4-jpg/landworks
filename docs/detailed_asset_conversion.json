@@ -1,0 +1,97 @@
+{
+  "b7100_wheel_front_l": {
+    "source_parts": 30,
+    "vertices": 27680,
+    "triangles": 54120
+  },
+  "b7100_wheel_front_r": {
+    "source_parts": 30,
+    "vertices": 27680,
+    "triangles": 54120
+  },
+  "b7100_wheel_rear_l": {
+    "source_parts": 30,
+    "vertices": 31520,
+    "triangles": 61640
+  },
+  "b7100_wheel_rear_r": {
+    "source_parts": 30,
+    "vertices": 31520,
+    "triangles": 61640
+  },
+  "b7100_body": {
+    "source_parts": 353,
+    "vertices": 88348,
+    "triangles": 167228
+  },
+  "kx080_track_shoe": {
+    "source_parts": 6,
+    "vertices": 704,
+    "triangles": 1384
+  },
+  "kx080_undercarriage": {
+    "source_parts": 242,
+    "vertices": 43186,
+    "triangles": 85388
+  },
+  "kx080_upper": {
+    "source_parts": 137,
+    "vertices": 39612,
+    "triangles": 74014
+  },
+  "kx080_boom": {
+    "source_parts": 38,
+    "vertices": 24604,
+    "triangles": 44492
+  },
+  "kx080_stick": {
+    "source_parts": 20,
+    "vertices": 5556,
+    "triangles": 10476
+  },
+  "kx080_bucket": {
+    "source_parts": 14,
+    "vertices": 9086,
+    "triangles": 18068
+  },
+  "omitted_static_cross_joint_parts": [
+    "Boom lift barrel",
+    "Boom lift chrome ram",
+    "Boom lift eye",
+    "Boom lift eye.001",
+    "Boom lift gland",
+    "Boom lift gland.001",
+    "Boom lift supply hose",
+    "Bucket bellcrank",
+    "Bucket bellcrank.001",
+    "Bucket cylinder barrel",
+    "Bucket cylinder chrome ram",
+    "Bucket cylinder eye",
+    "Bucket cylinder eye.001",
+    "Bucket cylinder gland",
+    "Bucket cylinder gland.001",
+    "Bucket cylinder supply hose",
+    "Bucket dogbone",
+    "Bucket dogbone.001",
+    "Knuckle flexible hose",
+    "Knuckle flexible hose.001",
+    "Knuckle flexible hose.002",
+    "Knuckle flexible hose.003",
+    "Stick cylinder barrel",
+    "Stick cylinder chrome ram",
+    "Stick cylinder eye",
+    "Stick cylinder eye.001",
+    "Stick cylinder gland",
+    "Stick cylinder gland.001",
+    "Stick cylinder supply hose",
+    "Swivel supply hose",
+    "Swivel supply hose.001",
+    "Swivel supply hose.002",
+    "Swivel supply hose.003"
+  ],
+  "notes": [
+    "Detailed static source rebased to existing tested 3.0/2.32/0.82m physics pin lengths.",
+    "Tractor wheelbase 1.4m and track widths 0.895/0.815m match detailed source.",
+    "Existing dynamic cylinders and bucket linkage replace frozen static versions."
+  ]
+}

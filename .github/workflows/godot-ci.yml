@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Require actual Godot project
         shell: bash

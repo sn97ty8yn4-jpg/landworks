@@ -2,6 +2,16 @@
 # Godot 4.6/Jolt compatible. NO full DEM/SPH or excavator attachment calibration.
 extends Node3D
 
+const BATCH = preload("res://landworks/scripts/soil/material_batch.gd")
+var material_mechanics := false # Enabled by the playable sandbox; legacy fixtures remain available.
+var columns: Array[MaterialBatch] = []
+var bucket_inventory := MaterialBatch.new()
+var offsite_inventory := MaterialBatch.new()
+var initial_mass: Dictionary = {}
+var terrain_revision := 0
+var last_receipt_id := 0
+var rejected_cuts := 0
+
 # 81×81 heightfield / 0.225m cells. Doubles spatial resolution in each axis
 # without changing the physical 18m work area or volume accounting.
 const N := 81
@@ -12,6 +22,7 @@ const HALF := 40
 # box-track edges; the inset permits a level ingress, while real banks still
 # rise naturally above the yard.
 const BASE_HEIGHT := -0.03
+const BEDROCK_HEIGHT := -3.0
 # Smaller sub-litre parcels model aggregate flow more convincingly.
 # Mobile volume is conserved; particles remain non-interacting proxies.
 const MAX_PARTICLES := 800
@@ -49,6 +60,11 @@ var spill_events := 0
 
 func _ready() -> void:
     _initialise_data()
+    if material_mechanics:
+        for id in range(N*N):
+            columns.append(BATCH.bank("clay" if material_ids[id] == 1 else "gravel",
+                maxf(0.0,height_values[id]-BEDROCK_HEIGHT)*CELL*CELL))
+        initial_mass = mass_totals()
     _make_collision()
     _make_visuals()
     initial_ground_m3 = ground_volume_m3()
@@ -224,7 +240,9 @@ func surface_height(world_pos: Vector3) -> float:
 func ground_volume_m3() -> float:
     var volume := 0.0
     for h in height_values:
-        volume += maxf(0.0, h - BASE_HEIGHT) * CELL * CELL
+        # Include the below-grade soil inventory. Clamping at the original
+        # surface would silently lose excavated volume from trench accounting.
+        volume += maxf(0.0, h - BEDROCK_HEIGHT) * CELL * CELL
     return volume
 
 func mobile_volume_m3() -> float:
@@ -241,11 +259,17 @@ func _point_to_segment_sq(p: Vector2, a: Vector2, b: Vector2) -> float:
 
 func cut_sweep(start: Vector3, finish: Vector3, tool_width_m: float,
         bucket_room_m3: float) -> Dictionary:
+    # Compatibility entry point for controlled standalone fixtures.
+    return commit_cut(propose_cut(start,finish,tool_width_m,bucket_room_m3),INF,INF)
+
+func propose_cut(start: Vector3, finish: Vector3, tool_width_m: float,
+        bucket_room_m3: float) -> Dictionary:
+    # Read-only: the machine applies this reaction BEFORE the next Jolt step.
     # Sample the actual moving bucket lip; no removal if motion stalls.
     var horizontal := Vector2(finish.x - start.x, finish.z - start.z)
     var movement := finish - start
     var moved := movement.length()
-    if moved < 0.018 or bucket_room_m3 <= 0.00001 or not has_position(finish):
+    if moved < (0.00001 if material_mechanics else 0.018) or bucket_room_m3 <= 0.00001 or not has_position(finish):
         return {"volume_m3": 0.0, "force_n": 0.0}
     var cut_level := minf(start.y, finish.y) - position.y - 0.045
     var segment_a := Vector2(start.x, start.z)
@@ -256,8 +280,13 @@ func cut_sweep(start: Vector3, finish: Vector3, tool_width_m: float,
     var cut_gravel_m3 := 0.0
     var cut_clay_m3 := 0.0
     var candidate_count := 0
-    for j in range(1, N - 1):
-        for i in range(1, N - 1):
+    var entries: Array[Dictionary] = []
+    var occupied := 0.0
+    var a_cell := _index_from_world(start)
+    var b_cell := _index_from_world(finish)
+    var margin := int(ceil(sqrt(width_sq)/CELL))+1
+    for j in range(maxi(1,mini(a_cell.y,b_cell.y)-margin),mini(N-2,maxi(a_cell.y,b_cell.y)+margin)+1):
+        for i in range(maxi(1,mini(a_cell.x,b_cell.x)-margin),mini(N-2,maxi(a_cell.x,b_cell.x)+margin)+1):
             var world_point := _world_at(i, j)
             var d2 := _point_to_segment_sq(Vector2(world_point.x, world_point.z),
                 segment_a, segment_b)
@@ -267,34 +296,103 @@ func cut_sweep(start: Vector3, finish: Vector3, tool_width_m: float,
             var penetrated := height_values[id] - cut_level
             if penetrated <= 0.0:
                 continue
-            var cell_capacity := minf(0.044, penetrated * 0.38)
-            var removed := minf(cell_capacity, (bucket_room_m3 - volume) / (CELL * CELL))
+            var cell_capacity := minf(minf(0.044, penetrated * 0.38),
+                maxf(0.0, height_values[id] - BEDROCK_HEIGHT))
+            if material_mechanics:
+                cell_capacity = minf(cell_capacity,maxf(0.0,tool_width_m*minf(penetrated,0.5)*moved-volume)/(CELL*CELL))
+            var swell := 1.0
+            if material_mechanics:
+                swell = (1.0+maxf(columns[id].void_ratio,columns[id].weighted("void_ratio_loose")))/(1.0+columns[id].void_ratio)
+            var removed := minf(cell_capacity, (bucket_room_m3 - occupied) / (CELL * CELL*swell))
             if removed <= 0.0:
                 break
-            height_values[id] -= removed
             var parcel_volume := removed * CELL * CELL
+            entries.append({"id":id,"m3":parcel_volume})
             volume += parcel_volume
+            occupied += parcel_volume*swell
             if material_ids[id] == 1:
                 cut_clay_m3 += parcel_volume
             else:
                 cut_gravel_m3 += parcel_volume
             var soil: Dictionary = SOIL_TYPES[_soil_type(i, j)]
-            pressure_sum += float(soil["cut_pressure_pa"]) * removed * tool_width_m
+            pressure_sum += (columns[id].resistance(tool_width_m,minf(penetrated,0.5)) if material_mechanics else float(soil["cut_pressure_pa"]) * removed * tool_width_m)
             candidate_count += 1
-    if volume > 0.00001:
+    var force := pressure_sum/maxf(1.0,float(candidate_count)*(1.0 if material_mechanics else 0.25))
+    if not material_mechanics: force = minf(22000.0,force)
+    return {"volume_m3":volume,"loose_m3":occupied,"force_n":force,
+        "gravel_m3":cut_gravel_m3,"clay_m3":cut_clay_m3,
+        "entries":entries,"revision":terrain_revision,"travel_m":moved}
+
+func commit_cut(proposal: Dictionary, available_force: float, available_work: float,
+        receipt_id: int = 0) -> Dictionary:
+    var empty := {"volume_m3":0.0,"loose_m3":0.0,"force_n":float(proposal.get("force_n",0.0))}
+    if not proposal.has("entries"): return empty
+    if receipt_id == 0: receipt_id = last_receipt_id+1
+    var force := float(proposal["force_n"])
+    last_cut_force_n = force
+    peak_cut_force_n = maxf(peak_cut_force_n,force)
+    if receipt_id <= last_receipt_id or int(proposal["revision"]) != terrain_revision or available_force < force or available_work <= 0.0:
+        rejected_cuts += 1
+        return empty
+    last_receipt_id = receipt_id
+    var fraction := minf(1.0,available_work/maxf(force*float(proposal["travel_m"]),1e-9))
+    var volume := 0.0
+    var loose := 0.0
+    for entry in proposal["entries"]:
+        var id := int(entry["id"])
+        var amount := float(entry["m3"])*fraction
+        if material_mechanics:
+            var extracted := columns[id].split(amount)
+            extracted.loosen()
+            loose += extracted.volume()
+            bucket_inventory.absorb(extracted)
+            _sync_column(id)
+        else:
+            height_values[id] -= amount/(CELL*CELL)
+            loose += amount
+        volume += amount
+    if volume > 0.0:
         terrain_dirty = true
         extracted_total_m3 += volume
         cut_events += 1
-    var force := minf(22000.0, pressure_sum / maxf(1.0, float(candidate_count) * 0.25))
-    last_cut_force_n = force
-    peak_cut_force_n = maxf(peak_cut_force_n, force)
-    return {"volume_m3": volume, "force_n": force,
-        "gravel_m3": cut_gravel_m3, "clay_m3": cut_clay_m3}
+        terrain_revision += 1
+    return {"volume_m3": volume, "loose_m3":loose,"force_n": force,
+        "work_j":force*float(proposal["travel_m"])*fraction,
+        "gravel_m3":float(proposal["gravel_m3"])*fraction,
+        "clay_m3":float(proposal["clay_m3"])*fraction}
+
+func _sync_column(id: int) -> void:
+    height_values[id] = BEDROCK_HEIGHT+columns[id].volume()/(CELL*CELL)
+    material_ids[id] = 1 if columns[id].kind() == "clay" else 0
+
+func mass_totals() -> Dictionary:
+    var totals := {"water":0.0}
+    var batches: Array = columns.duplicate()
+    batches.append(bucket_inventory)
+    batches.append(offsite_inventory)
+    for parcel in mobile:
+        if parcel.has("batch"): batches.append(parcel["batch"])
+    for batch in batches:
+        totals["water"] += batch.water+batch.free_water
+        for key in batch.dry:
+            totals[key] = float(totals.get(key,0.0))+float(batch.dry[key])
+    return totals
+
+func mass_error_kg() -> float:
+    var current := mass_totals()
+    var largest := 0.0
+    for key in initial_mass:
+        largest = maxf(largest,absf(float(current.get(key,0.0))-float(initial_mass[key])))
+    return largest
 
 func release_soil(world_tip: Vector3, direction: Vector3,
         amount_m3: float, kind: String = "gravel") -> float:
     if amount_m3 <= 0.0:
         return 0.0
+    if material_mechanics:
+        amount_m3 = minf(amount_m3,bucket_inventory.volume())
+        if amount_m3 < 1e-10: return 0.0
+        kind = bucket_inventory.kind()
     var available := MAX_PARTICLES - mobile.size()
     if available <= 0:
         return 0.0
@@ -312,6 +410,8 @@ func release_soil(world_tip: Vector3, direction: Vector3,
             0.40 + float(n % 4) * 0.08, cos(phase) * 0.32)
         mobile.append({"pos": point, "vel": velocity, "m3": volume,
             "material": kind, "age": 0.0, "bounces": 0})
+        if material_mechanics:
+            mobile.back()["batch"] = bucket_inventory.split(volume)
     peak_particles = maxi(peak_particles, mobile.size())
     spill_events += 1
     mobile_dirty = true
@@ -326,10 +426,15 @@ func _deposit_particle(p: Dictionary) -> void:
         # Deposited cohesive clay must actually turn the receiving cell
         # into clay; volume and material appearance must stay coupled.
         material_ids[id] = 1 if str(p["material"]) == "clay" else 0
+        if material_mechanics:
+            columns[id].absorb(p["batch"])
+            _sync_column(id)
         deposited_total_m3 += volume
         terrain_dirty = true
     else:
         offsite_m3 += volume
+        if material_mechanics: offsite_inventory.absorb(p["batch"])
+    terrain_revision += 1
 
 func _step_mobile(dt: float) -> void:
     for n in range(mobile.size() - 1, -1, -1):
@@ -377,12 +482,17 @@ func _slump(dt: float) -> void:
                 if excess <= 0.0:
                     continue
                 var move_h := minf(excess * clampf(dt * 2.2, 0.0, 0.25),
-                    maxf(0.0, height_values[left] - BASE_HEIGHT))
+                    maxf(0.0, height_values[left] - BEDROCK_HEIGHT))
                 if move_h < 0.000001:
                     continue
                 height_values[left] -= move_h
                 height_values[right] += move_h
+                if material_mechanics:
+                    columns[right].absorb(columns[left].split(move_h*CELL*CELL))
+                    _sync_column(left)
+                    _sync_column(right)
                 terrain_dirty = true
+                terrain_revision += 1
 
 func _physics_process(delta: float) -> void:
     _step_mobile(delta)

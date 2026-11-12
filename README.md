@@ -1,47 +1,77 @@
-# Landworks v0.6 — working-load scenarios
+# Durham Park Sandbox — Landworks
 
-New scenes: `landworks/scenes/tractor_work_lab.tscn` (tractor + dynamic single-axle trailer, 0–800 kg payloads, 0–6° ground) and `landworks/scenes/excavator_work_lab.tscn` (unfrozen 8.17 t KX080 proxy, rigid body boom and load, physical slewing upper assembly, ground-contact tracks, 250–1000 kg payloads). See `docs/V06_FIELD_TRIALS.md` for cases and limitations. `RUN_FIELD_TESTS_WINDOWS.bat` runs all seven cases using your Godot 4.6 executable and validates genuine CSV outputs; offline Python calculations are explicitly separate. **No Godot runtime test was possible in the authoring environment.**
+A Godot 4.6.3 / Jolt machinery sandbox with a detailed Kubota B7100 HST,
+KX080-inspired excavator, coupled trailer, movable loads and deformable soil.
 
----
+## Play on Windows
 
-# Landworks v0.5 — 3-engine tractor comparison + force-based excavator
+Double-click **PLAY_WINDOWS.bat**. This local workspace includes the runtime
+recovered from the detailed-machine package. The launcher imports changed
+assets before starting. Alternatively, open `project.godot` in Godot 4.6.3
+and press F5. Python and Blender are not required to play.
 
-**New standalone Godot 4.6 scenes, extending the v0.4 project without removing it:**
+For a fresh GitHub checkout, install Git LFS and run `git lfs pull` to fetch
+the detailed GLB models. The engine runtime is local-only; install Godot
+4.6.3 separately when playing from a fresh source checkout.
 
-1. **`landworks/scenes/physics_comparison_lab.tscn`** — automatic side-by-side physics test of the baseline B7100 proxy vs **KV Vehicle** vs **Godot Easy Vehicle Physics**, with separate implementations and actual Godot-derived telemetry CSV output. Run `SETUP_PHYSICS_WINDOWS.bat` first (Python 3 + internet). If the add-ons are missing, the UI reports them as unavailable — it does NOT fabricate data.
-2. **`landworks/scenes/physical_excavator_lab.tscn`** — actual gravity-affected rigid-body boom/stick/bucket, torque-limited `HingeJoint3D` motors and 250/500 kg suspended physics payload attached with a `PinJoint3D`. Automatic or manual hydraulic-*control proxy*; actual hydraulic circuits are NOT simulated.
-3. Original **`landworks/scenes/test_yard.tscn`** remains intact (visual-only v0.4 excavator, baseline tractor).
+Tab switches machines; W/S drive; A/D steer; Z/C orbit; mouse wheel zooms;
+F2 toggles inspection view; F1 displays the full controls. Excavator controls:
+I/K boom, O/L stick, P/semicolon bucket, Q/E slew, R dump and G load hook.
+V enters/leaves the detailed cab. Use arrow keys or right-drag to look around;
+Home centres the view. The original joysticks and travel controls now animate.
 
-**Detailed test instructions, code audit, licence references and acceptance thresholds: `docs/V05_EVALUATION.md`.**
+## Current integrated build
 
-## First run
+- Detailed segmented meshes, rotating/steering tractor wheels, circulating
+  track visuals, moving hydraulic cylinders and bucket linkage.
+- Physical machines, trailer hitch and movable loads run in one Jolt world
+  at 120 Hz. Detailed cosmetic meshes follow the physics bodies.
+- An 18 m mutable soil pad supports below-grade digging, with a provisional
+  3 m excavation limit. The surrounding 140 m yard no longer covers trenches
+  with a hidden collision floor or painted grass surface.
+- The playable soil path conserves dry constituents and water, swells dug
+  material, loads the physical bucket, and gates cuts on solved motion and
+  available hydraulic force/work. Mixed dumps retain their material masses.
+  Depth strata, compaction/ruts and calibrated hydraulics remain future work.
+- The original landscape panorama and three illustrated parallax layers are
+  integrated, replacing the old distant hills/clouds/trees. Their source PNGs
+  remain unchanged. Runtime seam blending joins the prototype strips; motifs
+  repeat, and the supplied artwork is below the planned 8K master resolution.
 
-1. Install Godot 4.6 and Python 3 on Windows; unzip the entire folder.
-2. Double-click `SETUP_PHYSICS_WINDOWS.bat` and restart Godot after it downloads the pinned MIT packages. The project defaults to **Jolt Physics at 120 Hz**. `RESTORE_BASELINE_PHYSICS_WINDOWS.bat` can restore GodotPhysics3D at 60 Hz for A/B testing.
-3. Open `project.godot` in Godot, then open each `.tscn` above and press **F6** (Run Current Scene).
-4. From the main yard, D-pad left/F5 opens the tractor comparison, D-pad right/F4 opens the physical lift lab; Circle/F4 returns to the yard. Observe the benchmark and load test. The benchmark writes results into `user://landworks_comparison_samples.csv` and `user://landworks_comparison_summary.csv`. The project shows the save location in its Output panel. To turn the recorded CSV into a comparison report, run `ANALYSE_BENCH_WINDOWS.bat` and supply the CSV path; the script refuses missing or invalid measurements.
+## Development record
 
-## Limitations
+See [November 12 advancement review](docs/ADVANCEMENT_REVIEW.md) for the
+bucket orientation correction and assessment of the later cab/physics work.
+See [runtime soil and detailed cab integration](docs/MATERIAL_CAB_INTEGRATION.md)
+for the active mechanics, visual changes, checks and remaining limitations.
+Run `python -m unittest discover -s tests -v` for the offline Python suite.
 
-The numerical handling comparison has **not yet been run**: the authoring environment has no Godot executable or installed vendor packages and cannot fetch binaries. The scripts implement the comparisons and physical joints but require runtime testing on the target PC. The excavator's lower chassis is deliberately anchored for an isolated load-lifting test, and the HingeJoint motors are not a calibrated hydraulic-pressure system. No exact Kubota donor mesh is bundled. The v0.2–0.4 GLB downloading/rigging pipeline and documentation are preserved.
+Start with [November 11 integration](docs/NOV11_INTEGRATION.md) for the three
+source chats, accepted decisions, imported work and remaining requirements.
+See [machine integration](docs/DETAILED_MODEL_INTEGRATION.md),
+[physics architecture](docs/PHYSICS_V2_ARCHITECTURE.md) and
+[physics acceptance plan](docs/PHYSICS_V2_TEST_PLAN.md).
 
-## Existing assets and rigging
+The full Physics v2 specification is a roadmap, not a claim that its features
+are implemented. The 250 x 250 m rolling landscape is also a target; this
+build retains the existing working yard with a non-interactive visual surround.
 
-Use `DOWNLOAD_MODELS_WINDOWS.bat`, `SCAN_MODELS_WINDOWS.bat`, `INSPECT_IN_BLENDER_WINDOWS.bat` and `EXPORT_RIGS_WINDOWS.bat` for the previously identified CC0 tractor and excavator visual donors. Their actual models are not included because original binary downloads could not be verified. See `docs/RIGGING_GUIDE.md` and `docs/ASSET_SOURCES.md`.
+Historical v0.4–v0.6 development notes are in
+[Development history](docs/DEVELOPMENT_HISTORY.md). Their older statements
+about missing models or untested runtimes do not describe this integration.
 
-## Offline source checks
+## Validation
 
-```cmd
-python -m unittest discover -s tests -p "test_*.py" -v
-python tests/check_project.py
-```
+Run `RUN_INTEGRATION_TESTS.ps1` in PowerShell for the Windows engine import,
+model alignment, articulation, soil conservation, below-grade collision,
+pad-entry, digging, hydraulics and hook checks. Logs go to `validation`.
 
-These are structural checks, not substitute simulations. `COPYING-NOTES.md` covers code and model licensing.
+The thirteen field scenarios remain available through
+`tools/run_work_tests.py`; validate their measured CSVs with
+`tools/validate_physics.py --dir validation/field`.
 
-
-## First integrated sandbox
-
-Open the project in Godot 4.6.1 and Run (F6 for the sandbox scene).
-The default scene now combines the real powered-joint excavator, HST tractor,
-loaded trailer and movable loads in one collision world. See
-`docs/SANDBOX.md` for controls, scene layout and physical test methodology.
+These tests verify the prototype's behaviour. They do not establish OEM
+calibration, a complete granular simulation or a measured 60 FPS guarantee.
+See [Windows results](docs/WINDOWS_INTEGRATION_RESULTS.md) for this build's
+measured checks and [landscape integration](docs/LANDSCAPE_INTEGRATION.md)
+for source provenance, geometry and remaining visual limitations.

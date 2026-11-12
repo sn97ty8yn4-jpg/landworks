@@ -5,6 +5,7 @@ extends Node3D
 
 const M = preload("res://landworks/scripts/mesh_factory.gd")
 const WORK_Z := -12.0
+const BACKDROP = preload("res://landworks/scripts/landscape_backdrop.gd")
 
 var rng := RandomNumberGenerator.new()
 var palette: Dictionary = {}
@@ -18,12 +19,12 @@ func _ready() -> void:
     rng.seed = 7100803
     _init_palette()
     _painted_ground()
-    _distant_hills()
+    var backdrop: Node3D = BACKDROP.new()
+    backdrop.name = "OriginalIllustratedLandscape"
+    add_child(backdrop)
     _farm_buildings()
     _wooden_fence()
-    _make_trees()
     _ground_detail()
-    _clouds()
     _digging_site_details()
     print("LANDWORKS_ART_READY terrain=painted vegetation=instanced scenery=", scenery_count)
 
@@ -140,7 +141,7 @@ func _painted_ground() -> void:
     var brush := Shader.new()
     brush.code = """
 shader_type spatial;
-render_mode diffuse_toon, specular_disabled;
+render_mode diffuse_toon, specular_disabled, cull_disabled;
 varying vec3 painted_world;
 void vertex() {
     painted_world = (MODEL_MATRIX * vec4(VERTEX,1.0)).xyz;
@@ -150,6 +151,11 @@ float pigment(vec2 p) {
 }
 void fragment() {
     vec2 uv = painted_world.xz;
+    // Match the collision opening exactly; painted grass must not cover
+    // the mutable surface or hide a trench below the original yard level.
+    if (abs(uv.x) < 9.0 && uv.y > -21.0 && uv.y < -3.0) {
+        discard;
+    }
     float wash = sin(uv.x*0.31+cos(uv.y*0.22))*cos(uv.y*0.21);
     float stipple = pigment(uv*7.0);
     float fleck = pigment(uv*21.0);
@@ -387,7 +393,7 @@ void fragment() {
     wind_material.shader = wind
     blades.surface_set_material(0,wind_material)
     var grass_positions: Array[Vector3] = []
-    for i in range(11500):
+    for i in range(1800):
         var x := rng.randf_range(-64.0,64.0)
         var z := rng.randf_range(-63.0,63.0)
         if (absf(x) < 13.0 and z < -0.8 and z > -23.5) or            (absf(x) < 5.0 and z > -7.0 and z < 32.0):
@@ -396,7 +402,7 @@ void fragment() {
     grass_group = _make_instanced(blades,[
         Color("#a1a85f"), Color("#688849"),Color("#547745"),
         Color("#d0bd6a"), Color("#86a65f")],
-        grass_positions,"AnimatedMeadowGrass",0.62,1.48)
+        grass_positions,"AnimatedMeadowGrass",0.4,0.85)
     var petal := SphereMesh.new()
     petal.radius = 0.060
     petal.height = 0.12
@@ -407,7 +413,7 @@ void fragment() {
     petal_mat.diffuse_mode = BaseMaterial3D.DIFFUSE_TOON
     petal.surface_set_material(0,petal_mat)
     var flower_positions: Array[Vector3] = []
-    for i in range(1750):
+    for i in range(180):
         var x := rng.randf_range(-57.0,57.0)
         var z := rng.randf_range(-58.0,58.0)
         if (absf(x) < 14.0 and z < 4.0 and z > -25.0):
@@ -426,7 +432,7 @@ void fragment() {
     stone_mat.roughness = 1.0
     stone.surface_set_material(0,stone_mat)
     var pebbles: Array[Vector3] = []
-    for i in range(340):
+    for i in range(55):
         var x := rng.randf_range(-15.0,15.0)
         var z := rng.randf_range(-29.0,18.0)
         if absf(x)<4.0 and z > -6.0 and z < 9.0:

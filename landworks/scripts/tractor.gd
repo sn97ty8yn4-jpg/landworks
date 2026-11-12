@@ -79,11 +79,11 @@ func _build_body() -> void:
     M.block(body_visual, Vector3(0.065, 1.25, 0.065), Vector3(0.43, 0.95, 0.66), Color("#313232"))
     M.block(body_visual, Vector3(0.94, 0.065, 0.065), Vector3(0, 1.57, 0.66), Color("#313232"))
     # Real B7100HST turf sizes: front 20.5 x 8.00-10; rear 29 x 12.00-15.
-    # Mounts span the documented 1.39 m wheelbase (centre-to-centre).
-    _wheel(Vector3(-0.35, -0.14, 0.70), 0.3683, 0.3048, false, 0.65)
-    _wheel(Vector3(0.35, -0.14, 0.70), 0.3683, 0.3048, false, 0.65)
-    _wheel(Vector3(-0.37, -0.24, -0.69), 0.26035, 0.2032, true, 0.35)
-    _wheel(Vector3(0.37, -0.24, -0.69), 0.26035, 0.2032, true, 0.35)
+    # Mounts span the detailed-model 1.40 m wheelbase (centre-to-centre).
+    _wheel(Vector3(-0.4075, -0.14, 0.70), 0.3683, 0.3048, false, 0.65)
+    _wheel(Vector3(0.4075, -0.14, 0.70), 0.3683, 0.3048, false, 0.65)
+    _wheel(Vector3(-0.4475, -0.24, -0.70), 0.26035, 0.2032, true, 0.35)
+    _wheel(Vector3(0.4475, -0.24, -0.70), 0.26035, 0.2032, true, 0.35)
     VIS.place_visual(self, body_visual, "res://landworks/assets/rigged/b7100_body.glb")
 
 func _wheel(at: Vector3, radius: float, width: float, steering: bool, torque_share: float) -> void:

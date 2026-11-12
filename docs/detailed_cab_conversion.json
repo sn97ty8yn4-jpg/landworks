@@ -1,0 +1,13 @@
+{
+  "source_sha256": "953fc7d6f7211015c393cf736252be12f0ebd5aaaec397caf3e7bc7daea98a05",
+  "triangles_before": 74014,
+  "triangles_after": 74014,
+  "triangles_by_part": {
+    "UpperShell": 69574,
+    "CabLeftJoystick": 1016,
+    "CabRightJoystick": 1016,
+    "CabLeftTravel": 1204,
+    "CabRightTravel": 1204
+  },
+  "positions_normals_uv_materials": "unchanged; only indices partitioned and pivot nodes added"
+}

@@ -36,13 +36,15 @@ func _exercise(sandbox: Node3D) -> void:
     var force_n: float = earth.peak_cut_force_n
     var cut_events: int = earth.cut_events
     var balance_m3: float = earth.ground_volume_m3() + sandbox.soil_bucket_m3 +         earth.mobile_volume_m3() + earth.offsite_m3 - initial_m3
+    var mass_error: float = earth.mass_error_kg() if earth.material_mechanics else 0.0
     print("PHYSICAL_DIG_TEST lip_start=", lip_at_start,
         " bank_h=", surface_at_start,
         " lip_end=", lip_after, " cut_m3=", cut_m3,
         " cut_events=", cut_events, " last_force_n=", force_n,
         " bucket_m3=", sandbox.soil_bucket_m3,
-        " balance_m3=", balance_m3)
-    if cut_m3 <= 0.005 or cut_events < 2 or force_n < 100.0 or absf(balance_m3) > 0.006:
+        " bulk_swell_m3=", balance_m3," constituent_error_kg=",mass_error)
+    var conserved: bool = mass_error < 0.001 if earth.material_mechanics else absf(balance_m3) < 0.006
+    if cut_m3 <= 0.005 or cut_events < 2 or force_n < 100.0 or not conserved:
         push_error("PHYSICAL_DIG_FAIL powered bucket did not remove conserved bank material")
         quit(1)
         return
@@ -59,5 +61,8 @@ func _exercise(sandbox: Node3D) -> void:
         " deposited_m3=", earth.deposited_total_m3)
     var good: bool = sandbox.maximum_dumped_m3 > 0.002
     good = good and absf(sandbox.soil_mass_error_m3) < 0.006
+    if earth.material_mechanics:
+        good = good and earth.mass_error_kg() < 0.001
+        good = good and absf(digger.bucket.mass-sandbox.bucket_empty_mass-earth.bucket_inventory.mass()) < 0.01
     print("PHYSICAL_DIG ", "PASS" if good else "FAIL")
     quit(0 if good else 2)

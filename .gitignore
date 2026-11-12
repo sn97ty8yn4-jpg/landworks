@@ -13,3 +13,8 @@ field_test_results/
 engineering_prechecks/
 surrogate_results/
 .godot/
+
+.integration-source/
+runtime/
+validation/
+*.log

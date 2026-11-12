@@ -13,6 +13,24 @@ var slew_target_rad := 0.0
 var total_slew_command_deg := 0.0
 var attached_load: RigidBody3D
 var load_hook_joint: PinJoint3D
+var cab_commands: Dictionary = {}
+var hydraulics_enabled := true
+
+func _drive_hydraulics(delta: float) -> void:
+    if hydraulics_enabled:
+        super._drive_hydraulics(delta)
+        return
+    hydraulic_state = {"speeds":{},"torque_caps":{},"hydraulic_power_kw":0.0}
+    for key in ["boom","stick","bucket"]:
+        var joint: HingeJoint3D = hinges[key]["joint"]
+        joint.set_param(HingeJoint3D.PARAM_MOTOR_MAX_IMPULSE,0.0)
+        joint.set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY,0.0)
+
+func _boom_base_pin() -> Vector3:
+    # Original art incorrectly mounted the boom at almost cab-roof height.
+    # Lower the REAL hinge and every connected link together. Local pin
+    # origins, limb lengths and torque limits are unchanged.
+    return Vector3(0.48,1.28,-0.66)
 
 func toggle_hook(candidates: Array[RigidBody3D]) -> String:
     # Actual Jolt pin constraint, not a scripted lift or teleport. A heavy
@@ -54,6 +72,15 @@ func _ready() -> void:
     initial_payload_mass = 1500.0
     surface_profile = SOIL.profile("hardpack")
     _build_machine()
+    # The older laboratory proxy reached down from a roof-height boom pin.
+    # With the real sandbox pin lower, keep ground contact at the visible
+    # bucket lip instead of retaining a hidden 1.2m-wide pushing block.
+    var toe := bucket.get_node_or_null("GroundHandlingToe") as CollisionShape3D
+    if toe != null:
+        var lip_shape := BoxShape3D.new()
+        lip_shape.size = Vector3(0.76,0.22,0.22)
+        toe.shape = lip_shape
+        toe.position = Vector3(0,-0.02,-BUCKET_LENGTH+0.11)
     name = "KX080_Physical_Excavator"
 
 func _physics_process(delta: float) -> void:
@@ -111,3 +138,5 @@ func _physics_process(delta: float) -> void:
     var left_speed := clampf((travel - turn) * 0.70, -0.80, 0.80)
     var right_speed := clampf((travel + turn) * 0.70, -0.80, 0.80)
     _drive_tracks(left_speed, right_speed)
+    cab_commands = {"boom":boom_cmd,"stick":stick_cmd,"bucket":bucket_cmd,
+        "slew":slew_cmd,"left_track":left_speed/0.8,"right_track":right_speed/0.8}

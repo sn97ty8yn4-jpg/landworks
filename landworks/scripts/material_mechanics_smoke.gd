@@ -1,0 +1,53 @@
+# Runtime material tests, distinct from Python reference and physical dig test.
+extends SceneTree
+const EARTH = preload("res://landworks/scripts/earthworks.gd")
+const BATCH = preload("res://landworks/scripts/soil/material_batch.gd")
+var failures: Array[String] = []
+func check(value: bool, reason: String) -> void:
+    if not value: failures.append(reason)
+func _initialize() -> void:
+    call_deferred("_run")
+func _run() -> void:
+    var soil = EARTH.new()
+    soil.material_mechanics = true
+    root.add_child(soil)
+    soil.set_physics_process(false)
+    var heights: PackedFloat32Array = soil.height_values.duplicate()
+    var start := Vector3(-2.8,0.34,-1.4)
+    var finish := Vector3(-2.4,0.34,-1.4)
+    var proposal: Dictionary = soil.propose_cut(start,finish,0.76,0.24)
+    check(soil.height_values == heights,"Proposal mutated terrain")
+    check(soil.propose_cut(start,start,0.76,0.24)["volume_m3"] == 0.0,"Stationary cut")
+    check(soil.commit_cut(proposal,0.0,10000.0)["volume_m3"] == 0.0,"Underpowered cut")
+    check(soil.commit_cut(proposal,1e8,0.0)["volume_m3"] == 0.0,"Zero work cut")
+    var work: float = proposal["force_n"]*proposal["travel_m"]*0.5
+    var result: Dictionary = soil.commit_cut(proposal,1e8,work,41)
+    check(absf(result["volume_m3"]-proposal["volume_m3"]*0.5)<1e-9,"Work budget ignored")
+    check(result["loose_m3"]>result["volume_m3"],"Bank soil did not swell")
+    var before: float = soil.bucket_inventory.mass()
+    check(soil.commit_cut(proposal,1e8,1e8,41)["volume_m3"] == 0.0,"Receipt replay accepted")
+    check(soil.bucket_inventory.mass() == before,"Replay duplicated mass")
+    var second: Dictionary = soil.propose_cut(Vector3(4.6,0.4,2.9),Vector3(4.9,0.4,2.9),0.76,0.18)
+    soil.commit_cut(second,1e8,1e8,42)
+    check(soil.bucket_inventory.dry.size() == 2,"Mixed scoop lost a constituent")
+    var restored = BATCH.restore(soil.bucket_inventory.save())
+    check(absf(restored.mass()-soil.bucket_inventory.mass())<1e-9,"Batch round-trip lost mass")
+    var room: float = soil.bucket_inventory.volume()
+    soil.release_soil(Vector3(0,2,0),Vector3.ZERO,room*0.5)
+    for parcel in soil.mobile:
+        parcel["pos"] = Vector3(0,0,0)
+        soil._deposit_particle(parcel)
+    soil.mobile.clear()
+    soil.release_soil(Vector3(30,2,0),Vector3.ZERO,room)
+    for parcel in soil.mobile: soil._deposit_particle(parcel)
+    soil.mobile.clear()
+    soil._slump(0.12)
+    check(soil.mass_error_kg()<0.001,"Dig/dump/deposit/slump/offsite mass loss")
+    check(soil.offsite_inventory.mass()>0.0,"Offsite soil disappeared")
+    var sand = BATCH.bank("gravel",0.1)
+    var clay = BATCH.bank("clay",0.1)
+    check(clay.resistance(.76,.2)>sand.resistance(.76,.2),"Clay should resist cutting more than gravel")
+    print("MATERIAL_MECHANICS constituent_error_kg=",soil.mass_error_kg()," swell=",result["loose_m3"]/result["volume_m3"])
+    for failure in failures: push_error(failure)
+    print("MATERIAL_MECHANICS ","PASS" if failures.is_empty() else "FAIL")
+    quit(0 if failures.is_empty() else 1)

@@ -3,6 +3,7 @@ name: Earthworks - Fast physical machine coupling
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -15,6 +16,10 @@ jobs:
     steps:
       - name: Checkout project
         uses: actions/checkout@v4
+        with:
+          lfs: true
+      - name: Test offline material reference (not Jolt acceptance)
+        run: python3 -m unittest discover -s tests -p test_material_reference.py -v
       - name: Install Godot 4.6.1
         uses: chickensoft-games/setup-godot@v2
         with:
@@ -25,11 +30,30 @@ jobs:
         shell: bash
         run: |
           mkdir -p ci-earthworks
-          timeout 120s godot --headless --path . --editor --import 2>&1 | tee ci-earthworks/import.log
+          timeout 120s godot --headless --path . --editor --import --quit 2>&1 | tee ci-earthworks/import.log
           if grep -E 'SCRIPT ERROR:|Parse Error:|Failed to load script' ci-earthworks/import.log; then
             exit 1
           fi
+      - name: Test below-grade collisions and pad seams
+        shell: bash
+        run: |
+          timeout 65s godot --headless --path . --script res://landworks/scripts/below_grade_smoke.gd 2>&1 | tee ci-earthworks/trench.log
+          grep 'BELOW_GRADE PASS' ci-earthworks/trench.log
+      - name: Test detailed machine geometry
+        shell: bash
+        run: |
+          timeout 65s godot --headless --path . --script res://landworks/scripts/detailed_skin_smoke.gd 2>&1 | tee ci-earthworks/geometry.log
+          grep 'DETAILED_SKIN PASS' ci-earthworks/geometry.log
       - name: Test independent particle conservation
+        shell: bash
+        run: |
+          timeout 65s godot --headless --path . --script res://landworks/scripts/material_mechanics_smoke.gd 2>&1 | tee ci-earthworks/materials.log
+          grep 'MATERIAL_MECHANICS PASS' ci-earthworks/materials.log
+          timeout 65s godot --headless --path . --script res://landworks/scripts/unpowered_soil_smoke.gd 2>&1 | tee ci-earthworks/unpowered.log
+          grep 'UNPOWERED_SOIL PASS' ci-earthworks/unpowered.log
+          timeout 65s godot --headless --path . --script res://landworks/scripts/detailed_cab_smoke.gd 2>&1 | tee ci-earthworks/cab.log
+          grep 'DETAILED_CAB PASS' ci-earthworks/cab.log
+      - name: Test legacy particle conservation
         shell: bash
         run: |
           timeout 65s godot --headless --path . --script res://landworks/scripts/earthworks_smoke.gd 2>&1 | tee ci-earthworks/soil.log
