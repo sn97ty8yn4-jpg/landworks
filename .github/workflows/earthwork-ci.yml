@@ -53,6 +53,11 @@ jobs:
           grep 'UNPOWERED_SOIL PASS' ci-earthworks/unpowered.log
           timeout 65s godot --headless --path . --script res://landworks/scripts/detailed_cab_smoke.gd 2>&1 | tee ci-earthworks/cab.log
           grep 'DETAILED_CAB PASS' ci-earthworks/cab.log
+      - name: Test rigged models and new mechanisms
+        shell: bash
+        run: |
+          timeout 85s godot --headless --path . --script res://landworks/scripts/rigged_model_smoke.gd 2>&1 | tee ci-earthworks/rigged.log
+          grep 'RIGGED_MODEL PASS' ci-earthworks/rigged.log
       - name: Test two-state slope stability
         shell: bash
         run: |

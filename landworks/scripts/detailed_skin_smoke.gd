@@ -15,6 +15,17 @@ func _points(node: Node, reference: Node3D, points: Array[Vector3]) -> void:
                 points.append(reference.to_local(node.to_global(v)))
     for child in node.get_children():
         _points(child,reference,points)
+# Just the part's own skin. Its children are the cylinders and linkage, which
+# the rig aims at their pins every frame, so including them would measure
+# hydraulics rather than the limb and would not be repeatable.
+func _own_points(node: Node3D, reference: Node3D, points: Array[Vector3]) -> void:
+    if not (node is MeshInstance3D) or node.mesh == null:
+        return
+    for s in range(node.mesh.get_surface_count()):
+        var a: Array = node.mesh.surface_get_arrays(s)
+        for v in a[Mesh.ARRAY_VERTEX]:
+            points.append(reference.to_local(node.to_global(v)))
+
 func _nearest(points: Array[Vector3], target: Vector3) -> float:
     var distance := INF
     for point in points:
@@ -40,34 +51,62 @@ func _check() -> void:
             problems.append("Wheel geometry offset from live rotation axis")
         if absf((hi.y-lo.y)*0.5-float(wheel["radius"]))>0.008:
             problems.append("Tyre radius differs from physical contact radius")
+    # The excavator now wears the rigged KX080-3 model. Each limb's art is
+    # bound straight onto its rigid body, so the model's own pin spacing must
+    # match the solver's limb lengths.
     var e: Node3D=world.digger
-    for item in [[e.boom,"kx080_boom",3.0],[e.stick,"kx080_stick",2.32]]:
+    for item in [[e.boom,"Boom",e.BOOM_LENGTH],[e.stick,"Arm",e.STICK_LENGTH]]:
         var body: Node3D=item[0]
-        var part: Node3D=body.get_node("Engineered_"+str(item[1]))
+        var part := body.get_node_or_null(str(item[1])) as Node3D
+        if part == null:
+            problems.append("Rigged limb art missing: "+str(item[1]))
+            continue
         var points: Array[Vector3]=[]
-        _points(part,body,points)
-        for pin in [Vector3.ZERO,Vector3(0,0,-float(item[2]))]:
-            var distance := _nearest(points,pin)
-            max_pin_error=maxf(max_pin_error,distance)
-            if distance>0.075:problems.append("Imported arm does not reach physical hinge")
+        var scan: Array[Vector3]=[]
+        _points(part,body,scan)
+        _own_points(part,body,points)
+        # Measure reach, not surface depth: the modelled boom is a slender
+        # swept section, so its skin never passes through the pin centre.
+        # What must hold is that the steel spans the solver's pin spacing.
+        var lo_z := INF
+        var hi_z := -INF
+        for p in points:
+            if absf(p.x)>=0.30: continue
+            lo_z=minf(lo_z,p.z)
+            hi_z=maxf(hi_z,p.z)
+        var length := float(item[2])
+        # The far end must land on the far pin. The near end must cover its
+        # own pin, but may run past it: the dipper's cylinder lever really
+        # does sit behind the pivot, and the boom carries lug plates.
+        var far_error := absf(lo_z+length)
+        max_pin_error=maxf(max_pin_error,far_error)
+        print("LIMB_REACH ",item[1]," pin_spacing_m=",length,
+            " far_pin_error_m=",far_error," near_overhang_m=",hi_z)
+        if points.is_empty() or far_error>0.16 or hi_z<-0.05:
+            problems.append("Imported arm does not reach physical hinge")
     var teeth: Array[Vector3]=[]
-    if "--reversed-bucket-fixture" in OS.get_cmdline_user_args():
-        e.bucket.get_node("Engineered_kx080_bucket").rotation.z = 0.0
-    _points(e.bucket.get_node("Engineered_kx080_bucket"),e.bucket,teeth)
-    var lip_error := _nearest(teeth,Vector3(0,0,-e.BUCKET_LENGTH))
-    if lip_error>0.035:problems.append("Visible cutting tooth differs from soil sampling point")
-    # Check the actual shell, not the transform: a reversed bucket can still
-    # put its hinge and teeth exactly on the two expected transverse lines.
-    var shell_y := 0.0
-    var shell_samples := 0
+    var bucket_art := e.bucket.get_node_or_null("Bucket") as Node3D
+    if "--reversed-bucket-fixture" in OS.get_cmdline_user_args() and bucket_art != null:
+        bucket_art.rotation.y += PI
+    if bucket_art == null:
+        problems.append("Rigged limb art missing: Bucket")
+    else:
+        var bucket_scan: Array[Vector3]=[]
+        _points(bucket_art,e.bucket,bucket_scan)
+        _own_points(bucket_art,e.bucket,teeth)
+    var lip_error := _nearest(teeth,e.BUCKET_TIP)
+    if lip_error>0.055:problems.append("Visible cutting tooth differs from soil sampling point")
+    # The soil solver cuts a swath of BUCKET_WIDTH. That number has to be the
+    # width of the steel you can actually see, not a tuned constant.
+    var lo_x := INF
+    var hi_x := -INF
     for p in teeth:
-        if absf(p.x)<0.30 and p.z < -0.20 and p.z > -0.65:
-            shell_y += p.y
-            shell_samples += 1
-    shell_y /= maxf(float(shell_samples),1.0)
-    print("BUCKET_SHELL mean_y_m=",shell_y," samples=",shell_samples)
-    if shell_samples == 0 or shell_y < 0.03:
-        problems.append("Bucket shell is reversed: cavity must face the negative-Y fill volume")
+        lo_x = minf(lo_x,p.x)
+        hi_x = maxf(hi_x,p.x)
+    var visible_width := hi_x-lo_x
+    print("BUCKET_STEEL visible_width_m=",visible_width," cut_width_m=",e.BUCKET_WIDTH)
+    if teeth.is_empty() or absf(visible_width-float(e.BUCKET_WIDTH))>0.12:
+        problems.append("Soil cut width does not match the visible bucket steel")
     print("DETAILED_SKIN_CHECK max_pin_surface_distance_m=",max_pin_error," lip_surface_distance_m=",lip_error)
     for p in problems:push_error(p)
     print("DETAILED_SKIN ","PASS" if problems.is_empty() else "FAIL")

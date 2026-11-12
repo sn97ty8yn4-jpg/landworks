@@ -110,7 +110,7 @@ func _build_rig(slope_deg: float, load_kg: float) -> void:
     trailer.set("payload_kg", load_kg)
     trailer.rotation.x = angle
     add_child(trailer)
-    var trailer_tongue := Vector3(0, -0.15, -1.80)
+    var trailer_tongue: Vector3 = trailer.HITCH_POINT
     trailer.global_position = hitch_world - trailer.global_transform.basis * trailer_tongue
     hitch = PinJoint3D.new()
     hitch.name = "PhysicalTowHitch"
@@ -163,7 +163,7 @@ func _physics_process(delta: float) -> void:
     peak_kmh = maxf(peak_kmh, speed)
     furthest_m = maxf(furthest_m, 8.0 - tractor.global_position.z)
     var error := tractor.to_global(Vector3(0, -0.20, 1.30)).distance_to(
-        trailer.to_global(Vector3(0, -0.15, -1.80)))
+        trailer.to_global(trailer.HITCH_POINT))
     worst_hitch_error_m = maxf(worst_hitch_error_m, error)
     var rel_rotation: Basis = tractor.global_transform.basis.inverse() * trailer.global_transform.basis
     var articulation_deg := absf(rad_to_deg(atan2(rel_rotation.z.x, rel_rotation.z.z)))

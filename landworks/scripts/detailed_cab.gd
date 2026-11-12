@@ -1,7 +1,10 @@
 # Camera and controls fitted to the recovered detailed GLB, not the old shell.
 # The four moving nodes contain the original geometry and original materials.
 extends Node3D
+# Seated eye point in the upper structure's own frame. The original rig and
+# the KX080-3 model place the floor at different heights, so it is settable.
 const EYE := Vector3(-0.58,2.25,-0.08)
+var EYE_OVERRIDE := EYE
 var camera: Camera3D
 var head: Node3D
 var controls: Array[Node3D] = []
@@ -11,13 +14,23 @@ var seated := false
 var yaw := 0.0
 var pitch := -15.0
 
+var levers_rigged := false
+
 func attach(part: Node3D) -> void:
+    # The original upper rig exposes four moving controls. The KX080-3 model
+    # has a modelled but unsplit interior, so the seated camera works there
+    # while the levers stay static; report which case applies, never pretend.
+    var found: Array[Node3D] = []
     for key in ["CabLeftJoystick","CabRightJoystick","CabLeftTravel","CabRightTravel"]:
         var control := part.find_child(key,true,false) as Node3D
-        assert(control != null,"Missing detailed control: "+key)
-        controls.append(control)
+        if control == null:
+            found.clear()
+            break
+        found.append(control)
+    controls = found
+    levers_rigged = not controls.is_empty()
     head = Node3D.new()
-    head.position = EYE
+    head.position = EYE_OVERRIDE
     add_child(head)
     camera = Camera3D.new()
     camera.name = "DetailedCabCamera"

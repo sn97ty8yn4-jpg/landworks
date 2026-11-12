@@ -15,6 +15,14 @@ const GROUND_HANDLING_CASES := [
 # Track traction is a contact-force proxy, NOT individual rubber belt dynamics.
 # 8170 kg includes chassis, carriage, boom, arm and bucket, excluding payload.
 const APPROX_DRY_GRASS_TRACK_MU := 0.56
+# Running gear and swing geometry measured from the rigged KX080-3 model.
+const TRACK_GAUGE_HALF := 0.875
+const SWING_BEARING_HEIGHT := 0.80
+# King post (boom offset) and dozer blade pivots, in the machine's own frame.
+const KING_POST_PIN := Vector3(0.10, 1.10, -1.00)
+const BLADE_PIN := Vector3(0.0, 0.30, -0.62)
+const BLADE_TORQUE_LIMIT_NM := 42000.0
+const OFFSET_TORQUE_LIMIT_NM := 30000.0
 const TRACK_MACHINE_MASS_KG := 8170.0
 const TRACK_SPEED_FEEDBACK_N_PER_MPS := 24000.0
 const TRACK_LATERAL_SKID_N_PER_MPS := 1900.0
@@ -28,6 +36,11 @@ var case_name := "lift_500"
 var output_dir := ""
 var batch := false
 var upper: RigidBody3D
+# Present only when fit_blade_and_offset is set; the measurement lab runs the
+# bare machine so its recorded trials stay comparable.
+var king_post: RigidBody3D
+var dozer_blade: RigidBody3D
+var fit_blade_and_offset := false
 var slew_joint: HingeJoint3D
 var data_file: FileAccess
 var sample_elapsed := 0.0
@@ -126,15 +139,17 @@ func _make_ground_tracks() -> void:
     mat.rough = false
     undercarriage.physics_material_override = mat
     # Wide, real rigid-body track contact area rather than a frozen chassis.
-    for x in [-0.86, 0.86]:
+    # Measured from the rigged model: 450 mm shoes on a 1.75 m gauge, 2.85 m
+    # crawler length, belt riding 355 mm about the roller centre line.
+    for x in [-TRACK_GAUGE_HALF, TRACK_GAUGE_HALF]:
         var shape := BoxShape3D.new()
-        shape.size = Vector3(0.46, 0.54, 3.10)
+        shape.size = Vector3(0.45, 0.71, 2.85)
         var c := CollisionShape3D.new()
         c.shape = shape
-        c.position = Vector3(x, 0.27, 0.0)
+        c.position = Vector3(x, 0.355, 0.0)
         undercarriage.add_child(c)
         M.block(undercarriage, shape.size, c.position, Color("#222a2c"))
-    M.block(undercarriage, Vector3(1.50, 0.28, 2.50), Vector3(0, 0.67, 0.03), Color("#43484b"))
+    M.block(undercarriage, Vector3(1.50, 0.28, 2.09), Vector3(0, 0.60, 0.03), Color("#43484b"))
 
 func _boom_base_pin() -> Vector3:
     # The laboratory retains its original measured test geometry. The
@@ -155,33 +170,52 @@ func _build_machine() -> void:
     add_child(upper)
     var c := CollisionShape3D.new()
     var shape := BoxShape3D.new()
-    shape.size = Vector3(1.94, 0.86, 2.45)
+    # Sized to the modelled upper structure and dropped onto the measured
+    # 0.80 m swing bearing (the old proxy sat on a 0.97 m plane).
+    shape.size = Vector3(2.00, 0.94, 2.45)
     c.shape = shape
-    c.position = Vector3(0, 1.44, 0.20)
+    c.position = Vector3(0, 1.27, 0.20)
     upper.add_child(c)
     M.block(upper, shape.size, c.position, Color("#e77c17"))
-    M.block(upper, Vector3(0.90, 1.20, 1.0), Vector3(-0.43, 2.22, -0.28), Color("#333d40"))
-    M.block(upper, Vector3(1.69, 0.38, 0.73), Vector3(0, 1.52, 1.11), Color("#bf6816"))
-    _make_hinge("slew", undercarriage, upper, Vector3(0, 0.97, 0),
+    M.block(upper, Vector3(0.90, 1.20, 1.0), Vector3(-0.43, 2.05, -0.28), Color("#333d40"))
+    M.block(upper, Vector3(1.69, 0.38, 0.73), Vector3(0, 1.35, 1.11), Color("#bf6816"))
+    _make_hinge("slew", undercarriage, upper, Vector3(0, SWING_BEARING_HEIGHT, 0),
         Vector3.UP, -PI, PI, _motor_impulse(SLEW_TORQUE_LIMIT_NM))
     slew_joint = hinges["slew"]["joint"]
     slew_joint.set_flag(HingeJoint3D.FLAG_USE_LIMIT, false)
     var boom_pin := _boom_base_pin()
+    # The rigged machine carries the boom on a king post and a dozer blade on
+    # the car body. The measurement lab leaves both off so the thirteen field
+    # trials keep comparing the same mass and the same ground contact.
+    var boom_parent: RigidBody3D = upper
+    if fit_blade_and_offset:
+        king_post = _make_box("KingPost_180kg", 180.0, KING_POST_PIN, 0.0,
+            0.34, 0.76, 0.52, Color("#d9700f"))
+        _make_hinge("offset", upper, king_post, KING_POST_PIN, Vector3.UP,
+            -1.047, 1.222, _motor_impulse(OFFSET_TORQUE_LIMIT_NM))
+        boom_parent = king_post
+        dozer_blade = _make_box("DozerBlade_320kg", 320.0, BLADE_PIN, 0.0,
+            0.90, 0.46, 2.20, Color("#e77717"))
+        dozer_blade.collision_mask = 3
+        _make_hinge("blade", undercarriage, dozer_blade, BLADE_PIN, Vector3.RIGHT,
+            -0.314, 0.314, _motor_impulse(BLADE_TORQUE_LIMIT_NM))
     boom = _make_box("Boom_650kg", 650.0, boom_pin, 0.24,
         BOOM_LENGTH, 0.46, 0.46, Color("#f08820"))
     var stick_pin: Vector3 = boom.to_global(Vector3(0, 0, -BOOM_LENGTH))
     stick = _make_box("Stick_400kg", 400.0, stick_pin, -0.48,
         STICK_LENGTH, 0.34, 0.34, Color("#e97a17"))
     var bucket_pin: Vector3 = stick.to_global(Vector3(0, 0, -STICK_LENGTH))
-    bucket = _make_box("Bucket_210kg", 210.0, bucket_pin, -0.72,
-        BUCKET_LENGTH, 0.44, 0.76, Color("#42494a"))
-    _make_hinge("boom", upper, boom, boom_pin, Vector3.RIGHT,
-        -0.70, 1.15, _motor_impulse(BOOM_TORQUE_LIMIT_NM))
+    bucket = _make_box("Bucket_300kg", 300.0, bucket_pin, -0.72,
+        BUCKET_LENGTH, 0.44, BUCKET_WIDTH, Color("#42494a"))
+    # Ranges taken from the rigged model: boom -60 to +63 degrees, arm 30 to
+    # 150 degrees of crowd, bucket -40 (dumped) to +105 (curled).
+    _make_hinge("boom", boom_parent, boom, boom_pin, Vector3.RIGHT,
+        -1.047, 1.100, _motor_impulse(BOOM_TORQUE_LIMIT_NM))
     _make_hinge("stick", boom, stick, stick_pin, Vector3.RIGHT,
-        -1.5, 0.15, _motor_impulse(STICK_TORQUE_LIMIT_NM))
+        -2.094, 0.0, _motor_impulse(STICK_TORQUE_LIMIT_NM))
     _make_hinge("bucket", stick, bucket, bucket_pin, Vector3.RIGHT,
-        -1.0, 0.75, _motor_impulse(BUCKET_TORQUE_LIMIT_NM))
-    var hook: Vector3 = bucket.to_global(Vector3(0, 0, -BUCKET_LENGTH))
+        -0.698, 1.833, _motor_impulse(BUCKET_TORQUE_LIMIT_NM))
+    var hook: Vector3 = bucket.to_global(BUCKET_TIP)
     var is_free_object := case_name.begins_with("push_") or case_name.begins_with("roll_")
     if is_free_object:
         # Real collision toe attached to the rigid bucket; contacts originate

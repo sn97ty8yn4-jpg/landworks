@@ -7,9 +7,15 @@ extends Node3D
 const M = preload("res://landworks/scripts/mesh_factory.gd")
 const CI = preload("res://landworks/scripts/machine_input.gd")
 
-const BOOM_LENGTH := 3.0
-const STICK_LENGTH := 2.32
-const BUCKET_LENGTH := 0.82
+# Measured from the rigged KX080-3 model: boom foot pin to arm pin, arm pin to
+# bucket pin, and bucket pin to tooth tip. The tip is not radial on -Z, so
+# BUCKET_TIP carries the real tooth position and BUCKET_LENGTH its radius.
+const BOOM_LENGTH := 3.6
+const STICK_LENGTH := 1.75
+const BUCKET_TIP := Vector3(0.0, -0.5, -0.8)
+const BUCKET_LENGTH := 0.943
+# Cutting-edge width of the modelled digging bucket.
+const BUCKET_WIDTH := 0.65
 
 var undercarriage: RigidBody3D
 var boom: RigidBody3D
@@ -113,12 +119,12 @@ func _build_machine() -> void:
         STICK_LENGTH, 0.34, 0.34, Color("#e97a17"))
     var bucket_pin: Vector3 = stick.to_global(Vector3(0, 0, -STICK_LENGTH))
     bucket = _make_box("Bucket_210kg", 210.0, bucket_pin, 0.24 - 0.72 - 0.24,
-        BUCKET_LENGTH, 0.44, 0.76, Color("#42494a"))
+        BUCKET_LENGTH, 0.44, BUCKET_WIDTH, Color("#42494a"))
     _make_hinge("boom", undercarriage, boom, boom_pin, Vector3.RIGHT, -0.7, 1.15, 1200.0)
     _make_hinge("stick", boom, stick, stick_pin, Vector3.RIGHT, -1.5, 0.15, 700.0)
     _make_hinge("bucket", stick, bucket, bucket_pin, Vector3.RIGHT, -1.0, 0.75, 350.0)
 
-    var hook: Vector3 = bucket.to_global(Vector3(0, 0, -BUCKET_LENGTH))
+    var hook: Vector3 = bucket.to_global(BUCKET_TIP)
     test_mass = RigidBody3D.new()
     test_mass.name = "TestMass_250kg"
     test_mass.mass = 250.0

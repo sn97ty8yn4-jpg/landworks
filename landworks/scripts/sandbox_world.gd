@@ -12,6 +12,7 @@ const SOIL = preload("res://landworks/scripts/ground_response.gd")
 const EARTH = preload("res://landworks/scripts/earthworks.gd")
 const ART = preload("res://landworks/scripts/art_scene.gd")
 const MACHINE_ART = preload("res://landworks/scripts/engineered_machine_art.gd")
+const RIGGED_ART = preload("res://landworks/scripts/rigged_machine_art.gd")
 
 const SMOKE_DURATION_S := 21.0
 const CLAY_START_X := 18.0
@@ -63,6 +64,14 @@ var spoil_dump_request := false
 var soil_mass_error_m3 := 0.0
 var earthwork_start_m3 := 0.0
 var machine_visuals: Node3D
+var rig_visuals: Node3D
+const BLADE_WIDTH_M := 2.20
+const BLADE_EDGE_LOCAL := Vector3(0,-0.23,-0.90)
+var previous_blade_edge := Vector3.ZERO
+var previous_blade_edge_valid := false
+var blade_pushed_m3 := 0.0
+var trailer_bin := -1
+var tray_discharged_m3 := 0.0
 var camera_zoom := 1.0
 var inspection_view := false
 var inspection_down := false
@@ -167,7 +176,9 @@ func _build_machines() -> void:
     trailer = TRAILER.new()
     trailer.payload_kg = 400.0
     add_child(trailer)
-    trailer.global_position = hitch_world - trailer.global_transform.basis * Vector3(0, -0.15, -1.80)
+    trailer.global_position = hitch_world - trailer.global_transform.basis * trailer.HITCH_POINT
+    # The tipping tray is a sibling rigid body on a real rear pin.
+    trailer.build_tray(self)
     hitch = PinJoint3D.new()
     hitch.name = "Live_Tractor_Trailer_Hitch"
     add_child(hitch)
@@ -180,8 +191,17 @@ func _build_machines() -> void:
     add_child(digger)
     machine_visuals = MACHINE_ART.new()
     machine_visuals.name = "CustomEngineeredMachineVisuals"
+    # The tractor keeps the segmented engineered art; the excavator and the
+    # trailer are now driven from their own rigged models.
+    machine_visuals.dress_excavator = false
     add_child(machine_visuals)
     machine_visuals.attach_to(tractor,digger)
+    rig_visuals = RIGGED_ART.new()
+    rig_visuals.name = "RiggedModelMachineVisuals"
+    add_child(rig_visuals)
+    rig_visuals.attach_excavator(digger)
+    rig_visuals.attach_trailer(trailer)
+    print(rig_visuals.report())
 
 func _build_earthworks() -> void:
     earth = EARTH.new()
@@ -198,6 +218,10 @@ func _build_earthworks() -> void:
         digger.bucket.add_collision_exception_with(earth.get_node("MutableSoilCollider"))
     earthwork_start_m3 = earth.ground_volume_m3()
     bucket_empty_mass = digger.bucket.mass
+    # The tray catches what the bucket dumps into it instead of the ground.
+    if is_instance_valid(trailer.tray):
+        trailer_bin = earth.register_container(trailer.tray,
+            Vector3(1.25,0.70,2.10),Vector3(0,0.35,-1.09))
 
 func _make_prop(name: String, kg: float, location: Vector3,
         radius: float, cylinder: bool, tint: Color) -> void:
@@ -303,12 +327,13 @@ func _build_ui() -> void:
     instructions.add_theme_font_size_override("font_size",15)
     instructions.add_theme_color_override("font_color",Color("#f9ecd5"))
     instructions.text = "LANDWORKS  •  CONTROLS\n" +         "Tab / Triangle — change machine     Z/C — orbit camera\n" +         "Tractor: W/S travel, A/D steer; PS R2/L2 travel + left stick\n" +         "Excavator: W/S tracks, A/D differential pivot\n" +         "I/K boom  |  O/L stick  |  P/; bucket  |  Q/E slew\n" +         "G / Square — bucket hook     R — dump soil     F12 — old yard\n" +         "Mouse wheel — zoom     F2 — inspection view     F1 — close help"
+    instructions.text += "\nT/Y — dozer blade   [ / ] — boom offset   N/B — tip trailer"
     instructions.text += "\nV — cab/follow   Arrows / right-drag — look   Home — centre"
     help_panel.add_child(instructions)
 
 func _select_machine(which: int) -> void:
-    if machine_visuals != null and machine_visuals.cab != null:
-        machine_visuals.cab.set_seated(false)
+    if rig_visuals != null and rig_visuals.cab != null:
+        rig_visuals.cab.set_seated(false)
         camera.current = true
     active_machine = which
     # Switch to the left-front quarter when operating the excavator: it
@@ -320,7 +345,7 @@ func _select_machine(which: int) -> void:
     camera_zoom = 1.0
 
 func _unhandled_input(event: InputEvent) -> void:
-    var cab: Node3D = machine_visuals.cab
+    var cab: Node3D = rig_visuals.cab
     if event is InputEventKey and event.pressed and not event.echo:
         if event.keycode == KEY_V and active_machine == 1:
             cab.set_seated(not cab.seated)
@@ -343,6 +368,10 @@ func _physics_process(delta: float) -> void:
     # Machine and loose-body contact forces all run in the same Jolt world.
     tractor.ground_mu_override = 0.53 if tractor.global_position.x > CLAY_START_X else T.GROUND_MU
     digger.surface_profile = _current_surface(digger.undercarriage.global_position.x)
+    # Trailer tipping: real hinge torque, not a scripted tray transform.
+    if not smoke and is_instance_valid(trailer):
+        trailer.command_tip(float(Input.is_key_pressed(KEY_N))
+            - float(Input.is_key_pressed(KEY_B)), delta)
     for item in props:
         if not is_instance_valid(item):
             continue
@@ -369,7 +398,7 @@ func _physics_process(delta: float) -> void:
     max_boom_change = maxf(max_boom_change,
         absf(rad_to_deg(digger._joint_angle("boom") - initial_boom)))
     var hitch_gap := tractor.to_global(Vector3(0, -0.20, 1.30)).distance_to(
-        trailer.to_global(Vector3(0, -0.15, -1.80)))
+        trailer.to_global(trailer.HITCH_POINT))
     max_hitch_error = maxf(max_hitch_error, hitch_gap)
     var up: Vector3 = digger.undercarriage.global_transform.basis.y.normalized()
     max_tilt = maxf(max_tilt, rad_to_deg(acos(clampf(up.dot(Vector3.UP), -1.0, 1.0))))
@@ -390,11 +419,13 @@ func _physics_process(delta: float) -> void:
 func _update_earthworks(delta: float) -> void:
     if earth.material_mechanics:
         _update_material_mechanics(delta)
+        _update_blade_push()
+        _update_tray_discharge(delta)
         return
     # Engine-driven physical lip path: no soil is excavated by an animation or
     # player pressing a magical remove-soil button. The bucket must reach an
     # actual bank and move through it while below the soil surface.
-    var lip: Vector3 = digger.bucket.to_global(Vector3(0, 0, -digger.BUCKET_LENGTH))
+    var lip: Vector3 = digger.bucket.to_global(digger.BUCKET_TIP)
     if not previous_bucket_lip_valid:
         previous_bucket_lip = lip
         previous_bucket_lip_valid = true
@@ -454,13 +485,18 @@ func _cut_budget(lip: Vector3, direction: Vector3, delta: float) -> Dictionary:
     return {"force":force if active else 0.0,"work":power*delta}
 
 func _cutting_edge_local() -> Vector3:
-    # The steel that actually meets the soil: the front-bottom edge of the
-    # bucket's collision toe. The old reference point sat 130 mm above it.
+    # The steel that actually meets the soil. The rigged model carries a
+    # Bucket_Tip socket on the tooth line, 500 mm below and 800 mm ahead of
+    # the bucket pin, so the edge is no longer a radial point on -Z.
+    if rig_visuals != null:
+        var tip: Vector3 = rig_visuals.bucket_tip_local()
+        if tip.length_squared() > 0.0001:
+            return tip
     var toe := digger.bucket.get_node_or_null("GroundHandlingToe") as CollisionShape3D
     if toe != null and toe.shape is BoxShape3D:
         var size: Vector3 = (toe.shape as BoxShape3D).size
         return toe.position + Vector3(0.0, -0.5*size.y, -0.5*size.z)
-    return Vector3(0,0,-digger.BUCKET_LENGTH)
+    return digger.BUCKET_TIP
 
 func _update_material_mechanics(delta: float) -> void:
     var lip: Vector3 = digger.bucket.to_global(_cutting_edge_local())
@@ -477,7 +513,7 @@ func _update_material_mechanics(delta: float) -> void:
     if not pending_soil_contact.is_empty() and movement.length()>0.00001:
         var direction: Vector3 = pending_soil_contact["direction"]
         if movement.normalized().dot(direction)>0.5:
-            var proposal: Dictionary = earth.propose_cut(previous_bucket_lip,lip,0.76,room)
+            var proposal: Dictionary = earth.propose_cut(previous_bucket_lip,lip,digger.BUCKET_WIDTH,room)
             var result: Dictionary = earth.commit_cut(proposal,
                 float(pending_soil_contact["force"]),float(pending_soil_contact["work"]))
             maximum_excavated_m3 += float(result["volume_m3"])
@@ -487,7 +523,7 @@ func _update_material_mechanics(delta: float) -> void:
     pending_soil_contact.clear()
     if velocity.length()>0.001 and earth.has_position(lip) and room>0.00001:
         var direction := velocity.normalized()
-        var proposal: Dictionary = earth.propose_cut(lip,lip+velocity*delta,0.76,room)
+        var proposal: Dictionary = earth.propose_cut(lip,lip+velocity*delta,digger.BUCKET_WIDTH,room)
         var resistance := float(proposal.get("force_n",0.0))
         if resistance>0.0:
             pending_soil_contact = _cut_budget(lip,direction,delta)
@@ -558,8 +594,8 @@ func _finish_smoke() -> void:
     get_tree().quit(0)
 
 func _process(delta: float) -> void:
-    if machine_visuals.cab.seated:
-        machine_visuals.cab.look(
+    if rig_visuals.cab.seated:
+        rig_visuals.cab.look(
             (float(Input.is_key_pressed(KEY_LEFT))-float(Input.is_key_pressed(KEY_RIGHT)))*delta*65.0,
             (float(Input.is_key_pressed(KEY_UP))-float(Input.is_key_pressed(KEY_DOWN)))*delta*50.0)
     if not smoke:
@@ -608,7 +644,7 @@ func _process(delta: float) -> void:
     var wanted := focus + Vector3(sin(orbit_yaw) * dist, height, cos(orbit_yaw) * dist)
     camera.global_position = camera.global_position.lerp(wanted, clampf(delta * 4.5, 0.0, 1.0))
     camera.look_at(focus, Vector3.UP)
-    machine_visuals.update_bucket_fill(soil_bucket_m3,soil_bucket_material)
+    rig_visuals.update_bucket_fill(soil_bucket_m3,soil_bucket_material)
     var speed: float = tractor.linear_velocity.length() * 3.6
     var ground_label: String = str(_current_surface(target.global_position.x)["name"])
     if active_machine == 0:
@@ -625,3 +661,48 @@ func _process(delta: float) -> void:
         status.text += "Bucket %.0f L  |  Dug %.0f L  |  F1 controls" % [
             soil_bucket_m3*1000.0,maximum_excavated_m3*1000.0]
         status.text += "\nV: cab/follow  |  Soil %.0f kg" % earth.bucket_inventory.mass()
+
+func _update_blade_push() -> void:
+    # The dozer blade cuts below grade and pushes the spoil ahead of itself.
+    # The force available is whatever the tracks actually developed this tick,
+    # so a blade load the machine cannot push simply stalls.
+    if not is_instance_valid(digger.dozer_blade):
+        return
+    var edge: Vector3 = digger.dozer_blade.to_global(BLADE_EDGE_LOCAL)
+    if not previous_blade_edge_valid:
+        previous_blade_edge = edge
+        previous_blade_edge_valid = true
+        return
+    var start := previous_blade_edge
+    previous_blade_edge = edge
+    var movement := edge-start
+    if movement.length() < 0.0005 or not earth.has_position(edge):
+        return
+    var direction := movement.normalized()
+    var forward: Vector3 = -digger.undercarriage.global_basis.z.normalized()
+    if direction.dot(forward) < 0.3:
+        return
+    var force := absf(digger.last_track_left_force_n)+absf(digger.last_track_right_force_n)
+    if force <= 1.0:
+        return
+    var result: Dictionary = earth.blade_push(start,edge,BLADE_WIDTH_M,
+        force,force*movement.length(),edge+direction*0.55,direction)
+    blade_pushed_m3 += float(result["volume_m3"])
+
+func _update_tray_discharge(delta: float) -> void:
+    # Spoil leaves the tray over the tailgate once it is tipped far enough.
+    # Nothing is teleported: the load becomes loose material at the rear sill
+    # and falls under the same particle solver as every other dump.
+    if trailer_bin < 0 or not is_instance_valid(trailer.tray):
+        return
+    var held: float = earth.container_volume_m3(trailer_bin)
+    if held <= 0.000001:
+        return
+    var tip: float = trailer.tip_angle_rad()
+    if tip < 0.30:
+        return
+    var rate := 0.16*clampf((tip-0.30)/0.45,0.0,1.0)
+    var sill: Vector3 = trailer.tray.to_global(Vector3(0,0.12,0.12))
+    var direction: Vector3 = (trailer.tray.global_basis.z-Vector3.UP*0.35).normalized()
+    tray_discharged_m3 += earth.discharge_container(trailer_bin,sill,direction,
+        minf(held,rate*delta))

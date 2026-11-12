@@ -21,12 +21,17 @@ var glass_mat: StandardMaterial3D
 var metal_mat: StandardMaterial3D
 var ink_mat: ShaderMaterial
 
+var dress_excavator := true
+
 func attach_to(tractor_machine: RigidBody3D, digger: Node3D) -> void:
     tractor = tractor_machine
     excavator = digger
     _init_materials()
     _dress_tractor()
-    _dress_excavator()
+    # The sandbox dresses the excavator from the rigged KX080-3 model instead;
+    # this path still serves the tractor and the original laboratory scenes.
+    if dress_excavator:
+        _dress_excavator()
     print("LANDWORKS_MACHINE_ART_READY pieces=", parts_count,
         " cylinders=", cylinders.size())
 

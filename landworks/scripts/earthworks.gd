@@ -7,6 +7,12 @@ var material_mechanics := false # Enabled by the playable sandbox; legacy fixtur
 var columns: Array[MaterialBatch] = []
 var bucket_inventory := MaterialBatch.new()
 var offsite_inventory := MaterialBatch.new()
+# The dozer blade never carries material: it holds a cut only for the tick in
+# which it pushes it back out in front. Its own store keeps blade spoil from
+# mixing with whatever the bucket happens to be carrying, and mass_totals()
+# counts it, so a push is conserved like every other movement.
+var blade_inventory := MaterialBatch.new()
+var containers: Array[Dictionary] = []
 var initial_mass: Dictionary = {}
 var terrain_revision := 0
 var last_receipt_id := 0
@@ -351,7 +357,7 @@ func propose_cut(start: Vector3, finish: Vector3, tool_width_m: float,
         "entries":entries,"revision":terrain_revision,"travel_m":moved}
 
 func commit_cut(proposal: Dictionary, available_force: float, available_work: float,
-        receipt_id: int = 0) -> Dictionary:
+        receipt_id: int = 0, sink: MaterialBatch = null) -> Dictionary:
     var empty := {"volume_m3":0.0,"loose_m3":0.0,"force_n":float(proposal.get("force_n",0.0))}
     if not proposal.has("entries"): return empty
     if receipt_id == 0: receipt_id = last_receipt_id+1
@@ -380,7 +386,7 @@ func commit_cut(proposal: Dictionary, available_force: float, available_work: fl
             var extracted := columns[id].split(amount)
             extracted.loosen()
             loose += extracted.volume()
-            bucket_inventory.absorb(extracted)
+            (sink if sink != null else bucket_inventory).absorb(extracted)
             _sync_column(id)
         else:
             height_values[id] -= amount/(CELL*CELL)
@@ -408,6 +414,9 @@ func mass_totals() -> Dictionary:
     var batches: Array = columns.duplicate()
     batches.append(bucket_inventory)
     batches.append(offsite_inventory)
+    batches.append(blade_inventory)
+    for container in containers:
+        batches.append(container["inventory"])
     for parcel in mobile:
         if parcel.has("batch"): batches.append(parcel["batch"])
     for batch in batches:
@@ -424,13 +433,15 @@ func mass_error_kg() -> float:
     return largest
 
 func release_soil(world_tip: Vector3, direction: Vector3,
-        amount_m3: float, kind: String = "gravel") -> float:
+        amount_m3: float, kind: String = "gravel",
+        source: MaterialBatch = null) -> float:
+    var store: MaterialBatch = source if source != null else bucket_inventory
     if amount_m3 <= 0.0:
         return 0.0
     if material_mechanics:
-        amount_m3 = minf(amount_m3,bucket_inventory.volume())
+        amount_m3 = minf(amount_m3,store.volume())
         if amount_m3 < 1e-10: return 0.0
-        kind = bucket_inventory.kind()
+        kind = store.kind()
     var available := MAX_PARTICLES - mobile.size()
     if available <= 0:
         return 0.0
@@ -449,14 +460,53 @@ func release_soil(world_tip: Vector3, direction: Vector3,
         mobile.append({"pos": point, "vel": velocity, "m3": volume,
             "material": kind, "age": 0.0, "bounces": 0})
         if material_mechanics:
-            mobile.back()["batch"] = bucket_inventory.split(volume)
+            mobile.back()["batch"] = store.split(volume)
     peak_particles = maxi(peak_particles, mobile.size())
     spill_events += 1
     mobile_dirty = true
     return released
 
+# Open containers that catch falling material instead of the ground, such as
+# the trailer tray. Each holds its own batch and is counted in mass_totals().
+func register_container(node: Node3D, size: Vector3, centre: Vector3) -> int:
+    containers.append({"node":node,"size":size,"centre":centre,
+        "inventory":BATCH.new()})
+    return containers.size()-1
+
+func container_volume_m3(index: int) -> float:
+    if index < 0 or index >= containers.size(): return 0.0
+    return float(containers[index]["inventory"].volume())
+
+# Tip material back out of a container. Returns the volume actually released.
+func discharge_container(index: int, world_point: Vector3, direction: Vector3,
+        amount_m3: float) -> float:
+    if index < 0 or index >= containers.size(): return 0.0
+    var store: MaterialBatch = containers[index]["inventory"]
+    return release_soil(world_point,direction,minf(amount_m3,store.volume()),
+        store.kind(),store)
+
+func _catching_container(world_pos: Vector3) -> int:
+    # Containers hold a material batch, which only the mechanics path creates.
+    # Catching in the legacy path would drop the parcel's mass on the floor.
+    if not material_mechanics:
+        return -1
+    for n in range(containers.size()):
+        var node: Node3D = containers[n]["node"]
+        if not is_instance_valid(node): continue
+        var local: Vector3 = node.to_local(world_pos)-Vector3(containers[n]["centre"])
+        var half: Vector3 = Vector3(containers[n]["size"])*0.5
+        if absf(local.x)<half.x and absf(local.z)<half.z and absf(local.y)<half.y:
+            return n
+    return -1
+
 func _deposit_particle(p: Dictionary) -> void:
     var volume: float = p["m3"]
+    var caught := _catching_container(p["pos"])
+    if caught >= 0:
+        if material_mechanics and p.has("batch"):
+            containers[caught]["inventory"].absorb(p["batch"])
+        deposited_total_m3 += volume
+        return
     var coords := _index_from_world(p["pos"])
     if has_position(p["pos"]):
         var id := _idx(coords.x, coords.y)
@@ -486,6 +536,14 @@ func _step_mobile(dt: float) -> void:
         v.x *= maxf(0.0, 1.0 - float(soil["flow_drag"]) * dt * 0.14)
         v.z *= maxf(0.0, 1.0 - float(soil["flow_drag"]) * dt * 0.14)
         point += v * dt
+        # A parcel that enters an open container is caught there and never
+        # reaches the ground, so it must be tested on the way through.
+        if _catching_container(point) >= 0:
+            p["pos"] = point
+            _deposit_particle(p)
+            mobile.remove_at(n)
+            mobile_dirty = true
+            continue
         var contact_height := surface_height(point) + 0.06
         if point.y <= contact_height:
             if int(p["bounces"]) < (2 if str(p["material"]) == "gravel" else 0) and v.length() > 1.8:
@@ -664,3 +722,18 @@ func _physics_process(delta: float) -> void:
         dirty_clock = 0.0
     if mobile_dirty:
         _rebuild_particles()
+
+# Dozer blade. The blade cuts below grade and pushes what it cuts straight
+# ahead as a surface pile; it never carries material. Volume moves from the
+# bank, through the blade's own store, to loose material in a single tick,
+# so mass accounting never sees a gap and nothing is created or destroyed.
+func blade_push(start: Vector3, finish: Vector3, blade_width_m: float,
+        available_force: float, available_work: float,
+        release_point: Vector3, direction: Vector3) -> Dictionary:
+    var proposal := propose_cut(start,finish,blade_width_m,MAX_BUCKET_M3)
+    if float(proposal.get("force_n",0.0)) <= 0.0:
+        return {"volume_m3":0.0,"force_n":0.0}
+    var result := commit_cut(proposal,available_force,available_work,0,blade_inventory)
+    if float(result["volume_m3"]) > 0.0:
+        release_soil(release_point,direction,blade_inventory.volume(),"gravel",blade_inventory)
+    return result

@@ -25,7 +25,7 @@ func exercise(codes: Array, frames: int, label: String) -> void:
         DirAccess.make_dir_recursive_absolute("res://validation/playable-dig")
         root.get_texture().get_image().save_png("res://validation/playable-dig/"+label+".png")
     var e = world.digger
-    var lip: Vector3 = e.bucket.to_global(Vector3(0,0,-e.BUCKET_LENGTH))
+    var lip: Vector3 = e.bucket.to_global(e.BUCKET_TIP)
     print("PLAYER_DIG ",label," lip=",lip," ground=",world.earth.surface_height(lip),
         " cut=",world.maximum_excavated_m3," gap=",maximum_gap," speed=",maximum_speed,
         " targets=",e.target_angles)

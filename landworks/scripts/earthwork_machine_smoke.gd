@@ -18,12 +18,17 @@ func _exercise(sandbox: Node3D) -> void:
     digger.scripted_test = false
     # Relocate the soil bank, not the excavator or payload, to create a
     # reproducible site with a reachable gravel face beneath the bucket.
-    var lip_at_start: Vector3 = digger.bucket.to_global(Vector3(0, 0, -digger.BUCKET_LENGTH))
+    var lip_at_start: Vector3 = digger.bucket.to_global(digger.BUCKET_TIP)
     # Centre the bank 0.65 m ahead of the initial lip: the previous
     # target moved the bucket down 0.31 m but forward 0.89 m, skimming
     # above the original bank without any soil contact.
     earth.position = Vector3(lip_at_start.x + 1.8, 0.0,
         lip_at_start.z + 1.4 + 0.65)
+    # Seat the face just under the tooth. The rigged bucket's tip sits 0.5 m
+    # below its pin, so a pad fixed at y=0 starts the bucket buried 0.7 m in
+    # the bank, where it stalls instead of sweeping a cut. Drop the pad so the
+    # lip begins 50 mm clear and the commanded boom motion digs into it.
+    earth.position.y += (lip_at_start.y - 0.05) - earth.surface_height(lip_at_start)
     var surface_at_start: float = earth.surface_height(lip_at_start)
     var initial_m3: float = earth.ground_volume_m3()
     digger.target_angles["boom"] = -0.48
@@ -31,7 +36,7 @@ func _exercise(sandbox: Node3D) -> void:
     digger.target_angles["bucket"] = -0.24
     for n in range(900):
         await physics_frame
-    var lip_after: Vector3 = digger.bucket.to_global(Vector3(0, 0, -digger.BUCKET_LENGTH))
+    var lip_after: Vector3 = digger.bucket.to_global(digger.BUCKET_TIP)
     var cut_m3: float = sandbox.maximum_excavated_m3
     var force_n: float = earth.peak_cut_force_n
     var cut_events: int = earth.cut_events

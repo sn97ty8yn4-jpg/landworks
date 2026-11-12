@@ -1,7 +1,8 @@
 # Durham Park Sandbox — Landworks
 
-A Godot 4.6.3 / Jolt machinery sandbox with a detailed Kubota B7100 HST,
-KX080-inspired excavator, coupled trailer, movable loads and deformable soil.
+A Godot 4.6.3 / Jolt machinery sandbox with a detailed Kubota B7100 HST, a
+rigged KX080-3 excavator with a dozer blade and boom offset, a coupled farm
+tipping trailer, movable loads and deformable soil.
 
 ## Play on Windows
 
@@ -17,8 +18,10 @@ the detailed GLB models. The engine runtime is local-only; install Godot
 Tab switches machines; W/S drive; A/D steer; Z/C orbit; mouse wheel zooms;
 F2 toggles inspection view; F1 displays the full controls. Excavator controls:
 I/K boom, O/L stick, P/semicolon bucket, Q/E slew, R dump and G load hook.
-V enters/leaves the detailed cab. Use arrow keys or right-drag to look around;
-Home centres the view. The original joysticks and travel controls now animate.
+T/Y raise and lower the dozer blade, `[` and `]` swing the boom offset, and
+N/B tip and lower the trailer tray. V enters/leaves the cab. Use arrow keys or
+right-drag to look around; Home centres the view. The modelled cab interior is
+a single mesh, so its joysticks and travel levers no longer animate.
 
 ## Current integrated build
 
@@ -50,6 +53,12 @@ Home centres the view. The original joysticks and travel controls now animate.
 | `docs/` | Current design and integration notes; `docs/archive/` holds superseded v0.5/v0.6, handoff and import notes |
 | `runtime/` | Local Godot 4.6.3 engine (not in git) |
 | `validation/` | Test output, screenshots and `logs/` (not in git) |
+
+The excavator and trailer now wear externally built, fully rigged Blender
+models, and the machine and soil physics were remapped onto their measured
+pin geometry. See [rigged model integration](docs/RIGGED_MODEL_INTEGRATION.md)
+for the measured numbers, the three new mechanisms, the assumptions that are
+not taken from the models, and the known limitations.
 
 ## Development record
 

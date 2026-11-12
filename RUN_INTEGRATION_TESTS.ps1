@@ -7,6 +7,7 @@ Set-Content -LiteralPath (Join-Path $PSScriptRoot 'validation/.gdignore') -Value
 $cases = [ordered]@{
     detailed_skin_smoke = 'DETAILED_SKIN PASS'
     detailed_cab_smoke = 'DETAILED_CAB PASS'
+    rigged_model_smoke = 'RIGGED_MODEL PASS'
     material_mechanics_smoke = 'MATERIAL_MECHANICS PASS'
     slope_stability_smoke = 'SLOPE_STABILITY PASS'
     playable_dig_regression = 'PLAYABLE_DIG PASS'

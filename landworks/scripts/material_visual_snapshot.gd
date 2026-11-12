@@ -14,7 +14,7 @@ func _run() -> void:
     root.add_child(world)
     world._select_machine(1)
     world.digger.operated = false
-    var lip: Vector3 = world.digger.bucket.to_global(Vector3(0,0,-world.digger.BUCKET_LENGTH))
+    var lip: Vector3 = world.digger.bucket.to_global(world.digger.BUCKET_TIP)
     world.earth.position = Vector3(lip.x+1.8,0,lip.z+2.05)
     world.digger.target_angles["boom"] = -0.48
     world.digger.target_angles["stick"] = -0.70
