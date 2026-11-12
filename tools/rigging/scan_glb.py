@@ -190,7 +190,7 @@ def main(argv=None) -> int:
     args = p.parse_args(argv)
     path = args.input or (ASSET_DIR / SOURCES[args.machine])
     if not path.is_file():
-        p.error(f'GLB not available: {path}. Download via DOWNLOAD_MODELS_WINDOWS.bat first.')
+        p.error(f'GLB not available: {path}. Download via tools/windows/DOWNLOAD_MODELS_WINDOWS.bat first.')
     scan = inspect(path, args.machine)
     args.report_dir.mkdir(parents=True, exist_ok=True)
     args.recipe_dir.mkdir(parents=True, exist_ok=True)

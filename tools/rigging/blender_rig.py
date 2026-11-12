@@ -52,7 +52,7 @@ def args_parse():
 
 def import_source(path: Path):
     if not path.is_file():
-        raise FileNotFoundError(f'Donor GLB missing: {path}. Run DOWNLOAD_MODELS_WINDOWS.bat first.')
+        raise FileNotFoundError(f'Donor GLB missing: {path}. Run tools/windows/DOWNLOAD_MODELS_WINDOWS.bat first.')
     bpy.ops.object.select_all(action='SELECT')
     bpy.ops.object.delete(use_global=False)
     bpy.ops.import_scene.gltf(filepath=str(path))

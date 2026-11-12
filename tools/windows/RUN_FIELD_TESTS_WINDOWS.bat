@@ -1,5 +1,5 @@
 @echo off
-cd /d "%~dp0"
+cd /d "%~dp0..\.."
 set "GODOT_EXE=%~1"
 if "%GODOT_EXE%"=="" set "GODOT_EXE=godot"
 python tools\run_work_tests.py --godot "%GODOT_EXE%" --out "%CD%\field_test_results"

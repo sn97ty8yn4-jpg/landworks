@@ -1,5 +1,4 @@
-; Landworks Machinery Test Yard 0.6.0
-; Independent demonstration; copy only /landworks into a Tinybox fork.
+; Durham Park Sandbox (Landworks machinery sandbox) — Godot 4.6.3, Jolt 120 Hz.
 config_version=5
 
 [application]

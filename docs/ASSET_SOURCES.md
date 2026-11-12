@@ -12,7 +12,7 @@ Source pages state they are original Innerscene models, dedicated under CC0. Pre
 
 ## Get the actual GLB files
 
-On a Windows PC with Python 3 installed, double-click `DOWNLOAD_MODELS_WINDOWS.bat` from the extracted project folder. Or run:
+On a Windows PC with Python 3 installed, double-click `tools/windows/DOWNLOAD_MODELS_WINDOWS.bat` from the extracted project folder. Or run:
 
 ```
 python tools/get_models.py

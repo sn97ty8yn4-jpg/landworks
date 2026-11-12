@@ -34,7 +34,7 @@ All seven enclosed file hashes match the supplied manifest. Files adopted:
 
 - `docs/ENGINEERING_SPEC_V1_0.md`: original coupled-physics specification.
 - `docs/MATERIAL_MECHANICS_V1_1.md`: evolving material specification.
-- `docs/MATERIAL_MECHANICS_HANDOFF_V1_1.md`: original staged handoff.
+- `docs/archive/MATERIAL_MECHANICS_HANDOFF_V1_1.md`: original staged handoff.
 - `landworks/data/soil/material_profiles_v1_1.json`: seven original profiles;
   their source labels correctly identify unverified tuning assumptions.
 - `tools/material_reference.py`: original offline solver, with only its

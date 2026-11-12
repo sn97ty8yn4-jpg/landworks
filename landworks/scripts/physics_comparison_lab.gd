@@ -1,6 +1,6 @@
 # Runnable three-way physics comparison: baseline / KV Vehicle / Easy Vehicle Physics.
 # Logs PHYSICAL body state, not estimated or scripted distances.
-# Vendor scripts are downloaded by SETUP_PHYSICS_WINDOWS.bat; their physics is not faked.
+# Vendor scripts are downloaded by tools/windows/SETUP_PHYSICS_WINDOWS.bat; their physics is not faked.
 extends Node3D
 
 const M = preload("res://landworks/scripts/mesh_factory.gd")
@@ -213,7 +213,7 @@ func _update_hud() -> void:
     text_out += "PHASE: %s   elapsed %.1f s\n" % [PHASES[phase], timer]
     for id in ["BASELINE", "KV", "GEVP"]:
         if not machines.has(id):
-            text_out += "%s: NOT INSTALLED — run SETUP_PHYSICS_WINDOWS.bat\n" % id
+            text_out += "%s: NOT INSTALLED — run tools/windows/SETUP_PHYSICS_WINDOWS.bat\n" % id
             continue
         var body: RigidBody3D = machines[id]
         text_out += "%s: %5.1f km/h   y=%5.2f m   roll=%5.1f deg\n" % [id, body.linear_velocity.length()*3.6, body.global_position.y, body.rotation_degrees.z]

@@ -1,10 +1,10 @@
 $ErrorActionPreference = 'Stop'
 $repository = 'https://github.com/sn97ty8yn4-jpg/landworks.git'
-$source = Split-Path -Parent $MyInvocation.MyCommand.Path
+$source = Resolve-Path (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "..\..")
 $target = Join-Path $env:USERPROFILE 'Documents\landworks-github'
 
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-    throw 'Git was not found. Install Git for Windows or GitHub Desktop, then use START_HERE_WINDOWS.md.'
+    throw 'Git was not found. Install Git for Windows or GitHub Desktop, then use docs\START_HERE_WINDOWS.md.'
 }
 if (-not (Test-Path (Join-Path $source 'project.godot'))) {
     throw 'project.godot was not found beside this script. Extract the entire ZIP first.'

@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   import-and-test:
-    name: Godot 4.6.1 / GDScript / Jolt
+    name: Godot 4.6.3 / GDScript / Jolt
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
@@ -39,10 +39,10 @@ jobs:
             exit 1
           }
 
-      - name: Install Godot 4.6.1 Standard
+      - name: Install Godot 4.6.3 Standard
         uses: chickensoft-games/setup-godot@v2
         with:
-          version: 4.6.1
+          version: 4.6.3
           use-dotnet: false
           include-templates: false
 

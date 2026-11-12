@@ -33,9 +33,9 @@ The angle limits and motor max impulses are starting tunings. Godot's hinge moto
 ## How to run on Windows
 
 1. Open the project with **Godot 4.6**. The project defaults to **Jolt Physics at 120 physics ticks/s**, with the reversible scripts to test the old backend.
-2. Double-click `SETUP_PHYSICS_WINDOWS.bat` (requires Python 3). Verify both addon folders exist, then **restart Godot** so `class_name` scripts re-index.
+2. Double-click `tools/windows/SETUP_PHYSICS_WINDOWS.bat` (requires Python 3). Verify both addon folders exist, then **restart Godot** so `class_name` scripts re-index.
 3. Open `landworks/scenes/physics_comparison_lab.tscn` and press F6 (or from the main yard, D-pad left/F5). The three lines appear only when each real engine is installed. If the code has import errors, use Godot Output / Debugger to identify the failing component; do not record a benchmark for a variant which could not start.
-4. Wait for **SETTLE → ACCELERATE → BRAKE → TURN → DONE**. Results are written under Godot's app `user://` data directory as `landworks_comparison_samples.csv` and `landworks_comparison_summary.csv`. The console prints the data directory. Run `ANALYSE_BENCH_WINDOWS.bat` with the summary CSV path to write a Markdown comparison report; missing engine results remain explicitly marked as not run.
+4. Wait for **SETTLE → ACCELERATE → BRAKE → TURN → DONE**. Results are written under Godot's app `user://` data directory as `landworks_comparison_samples.csv` and `landworks_comparison_summary.csv`. The console prints the data directory. Run `tools/windows/ANALYSE_BENCH_WINDOWS.bat` with the summary CSV path to write a Markdown comparison report; missing engine results remain explicitly marked as not run.
 5. Open `landworks/scenes/physical_excavator_lab.tscn`, press F6, and observe physical payload height in the overlay. Use Space/Cross to switch to manual, M/Square to change the mass. If the rig moves without corresponding mass movement, or the hinge violently oscillates, record that as a failed physics acceptance test.
 6. Keep the earlier `landworks/scenes/test_yard.tscn` as the original playable baseline. The visual-only excavator remains there for backwards comparison.
 

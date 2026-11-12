@@ -1,6 +1,6 @@
 @echo off
 setlocal
-cd /d "%~dp0"
+cd /d "%~dp0..\.."
 echo [Landworks] Scan the two CC0 GLB source files. No downloads performed.
 python tools\rigging\scan_glb.py --machine b7100
 if errorlevel 1 goto fail

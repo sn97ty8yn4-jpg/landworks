@@ -10,7 +10,7 @@ This document is a **repeatable workflow**, not a claim that either downloaded m
 
 ## 2. Download and validate original models
 
-Double-click `DOWNLOAD_MODELS_WINDOWS.bat`. The source GLBs go under `landworks/assets/source/`:
+Double-click `tools/windows/DOWNLOAD_MODELS_WINDOWS.bat`. The source GLBs go under `landworks/assets/source/`:
 
 - `garden-tractor-with-trailer.glb`: unbranded, CC0, approx 17.8 MB, 406 mm front and 508 mm rear turf tyres, includes mower deck and trailer (these are **not** part of our B7100 chassis).
 - `compact-tracked-excavator.glb`: unbranded, CC0, approx 6.2 MB, a much smaller machine than the KX080-3.
@@ -19,7 +19,7 @@ If automated download fails, use the `Download GLB` link in each original source
 
 ## 3. GLB hierarchy scan
 
-Run `SCAN_MODELS_WINDOWS.bat` or:
+Run `tools/windows/SCAN_MODELS_WINDOWS.bat` or:
 
 ```cmd
 python tools/rigging/scan_glb.py --machine b7100
@@ -32,7 +32,7 @@ This writes mesh-node, mesh-material, hash and transformed AABB data to `landwor
 
 ## 4. Inspect and split in Blender
 
-Double-click `INSPECT_IN_BLENDER_WINDOWS.bat`. If Blender is not on PATH, use these commands with your full `blender.exe` path:
+Double-click `tools/windows/INSPECT_IN_BLENDER_WINDOWS.bat`. If Blender is not on PATH, use these commands with your full `blender.exe` path:
 
 ```cmd
 blender --background --python tools/rigging/blender_rig.py -- --stage inspect --machine b7100
@@ -80,7 +80,7 @@ A single selected front wheel or track mesh will be instanced twice by the game.
 
 ## 6. Export the separated parts
 
-After completing each recipe, save each Blender workbench, then run `EXPORT_RIGS_WINDOWS.bat` or:
+After completing each recipe, save each Blender workbench, then run `tools/windows/EXPORT_RIGS_WINDOWS.bat` or:
 
 ```cmd
 blender --background landworks/assets/workbench/b7100.blend --python tools/rigging/blender_rig.py -- --stage export --machine b7100

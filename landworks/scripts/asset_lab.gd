@@ -82,7 +82,7 @@ func _show_asset() -> void:
     var path: String = FILES[selected]
     if not ResourceLoader.exists(path):
         hud.text = "LANDWORKS — " + NAMES[selected] + " | MODEL NOT DOWNLOADED\n"
-        hud.text += "Run DOWNLOAD_MODELS_WINDOWS.bat or read docs/ASSET_SOURCES.md\n"
+        hud.text += "Run tools/windows/DOWNLOAD_MODELS_WINDOWS.bat or read docs/ASSET_SOURCES.md\n"
         hud.text += "F1 tractor · F2 excavator · Triangle swap · left stick orbit · triggers zoom"
         focus = Vector3(0, 1.1, 0)
         orbit_distance = 8.0

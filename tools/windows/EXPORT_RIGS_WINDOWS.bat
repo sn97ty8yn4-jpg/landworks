@@ -1,6 +1,6 @@
 @echo off
 setlocal
-cd /d "%~dp0"
+cd /d "%~dp0..\.."
 where blender.exe >NUL 2>NUL
 if errorlevel 1 (
  echo Blender not on PATH; see docs\RIGGING_GUIDE.md for command-line instructions.

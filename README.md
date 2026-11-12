@@ -38,6 +38,19 @@ Home centres the view. The original joysticks and travel controls now animate.
   remain unchanged. Runtime seam blending joins the prototype strips; motifs
   repeat, and the supplied artwork is below the planned 8K master resolution.
 
+## Folder layout
+
+| Path | Contents |
+| --- | --- |
+| `PLAY_WINDOWS.bat` | Launch the game (uses the bundled engine in `runtime/`) |
+| `RUN_INTEGRATION_TESTS.ps1` | Windows engine integration checks; logs to `validation/` |
+| `landworks/` | Game: scenes, scripts, soil data, engineered models, landscape art |
+| `tools/` | Python tooling; `tools/windows/` holds the secondary Windows launchers |
+| `tests/` | Offline Python test suite |
+| `docs/` | Current design and integration notes; `docs/archive/` holds superseded v0.5/v0.6, handoff and import notes |
+| `runtime/` | Local Godot 4.6.3 engine (not in git) |
+| `validation/` | Test output, screenshots and `logs/` (not in git) |
+
 ## Development record
 
 See [November 12 advancement review](docs/ADVANCEMENT_REVIEW.md) for the
@@ -57,7 +70,7 @@ are implemented. The 250 x 250 m rolling landscape is also a target; this
 build retains the existing working yard with a non-interactive visual surround.
 
 Historical v0.4–v0.6 development notes are in
-[Development history](docs/DEVELOPMENT_HISTORY.md). Their older statements
+[Development history](docs/archive/DEVELOPMENT_HISTORY.md). Their older statements
 about missing models or untested runtimes do not describe this integration.
 
 ## Validation

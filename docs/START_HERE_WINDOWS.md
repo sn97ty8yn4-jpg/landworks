@@ -9,6 +9,6 @@
 5. In GitHub Desktop, **Commit to main**, then **Push origin**.
 6. Open https://github.com/sn97ty8yn4-jpg/landworks/actions to inspect the Godot import and field-trial run.
 
-**Command-line alternative**: if Git for Windows is installed and authenticated, double-click `PUBLISH_TO_GITHUB_WINDOWS.bat` from this extracted folder. It clones into `Documents\landworks-github`, copies the source and pushes; it never asks you to send GitHub credentials to ChatGPT.
+**Command-line alternative**: if Git for Windows is installed and authenticated, double-click `tools/windows/PUBLISH_TO_GITHUB_WINDOWS.bat` from this extracted folder. It clones into `Documents\landworks-github`, copies the source and pushes; it never asks you to send GitHub credentials to ChatGPT.
 
 **Note**: earlier offline calculations are *not* confirmed gameplay results. The CI job must run the actual Godot scenes, produce all seven CSV scenarios and archive the outputs. When the run fails, share the GitHub Actions run link so the logs can be inspected and corrected.

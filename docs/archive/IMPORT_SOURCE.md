@@ -11,7 +11,7 @@ The GitHub Actions workflow is installed. The project itself must still be copie
 5. In GitHub Desktop, commit the changes to main, then select **Push origin**.
 6. Visit https://github.com/sn97ty8yn4-jpg/landworks/actions.
 
-Alternatively, the ZIP contains **PUBLISH_TO_GITHUB_WINDOWS.bat**, a helper for a Windows PC with a working Git installation and GitHub authentication. It clones the repo to Documents\\landworks-github, copies the source, commits and pushes it. It does not store personal access tokens.
+Alternatively, the ZIP contains **tools/windows/PUBLISH_TO_GITHUB_WINDOWS.bat**, a helper for a Windows PC with a working Git installation and GitHub authentication. It clones the repo to Documents\\landworks-github, copies the source, commits and pushes it. It does not store personal access tokens.
 
 ## CI acceptance
 

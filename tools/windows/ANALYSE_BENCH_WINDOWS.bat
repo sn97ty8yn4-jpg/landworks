@@ -1,4 +1,5 @@
 @echo off
+cd /d "%~dp0..\.."
 set /p SUMMARY=Path to landworks_comparison_summary.csv (from Godot user data folder):
 if "%SUMMARY%"=="" (
  echo No file selected, no results were fabricated.

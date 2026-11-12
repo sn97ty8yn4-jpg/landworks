@@ -1,6 +1,6 @@
 @echo off
 setlocal
-cd /d "%~dp0"
+cd /d "%~dp0..\.."
 where blender.exe >NUL 2>NUL
 if errorlevel 1 (
  echo Blender was not found on PATH. Launch a terminal using the installed blender.exe full path.

@@ -20,10 +20,10 @@ jobs:
           lfs: true
       - name: Test offline material reference (not Jolt acceptance)
         run: python3 -m unittest discover -s tests -p test_material_reference.py -v
-      - name: Install Godot 4.6.1
+      - name: Install Godot 4.6.3
         uses: chickensoft-games/setup-godot@v2
         with:
-          version: 4.6.1
+          version: 4.6.3
           use-dotnet: false
           include-templates: false
       - name: Import scripts and report errors

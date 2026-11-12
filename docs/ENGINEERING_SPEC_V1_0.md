@@ -252,6 +252,6 @@ Every stage should be a small independent pull request; preserve current prototy
 **Related variant:** Kubota Australia KX080-3S (cross-check only) — https://kubota.com.au/product/excavator-kx080-3s/  
 **Hydraulic workshop manual transcription:** https://manualzz.com/doc/54714335/kubota-kx080-3-workshop-manual — variant and source transcription must be verified before final calibration.  
 **Godot:** https://docs.godotengine.org/en/4.6/classes/class_heightmapshape3d.html and https://docs.godotengine.org/en/stable/classes/class_physicsserver3d.html  
-**Repository:** https://github.com/sn97ty8yn4-jpg/landworks — existing `docs/EARTHWORKS.md`, `docs/V06_FIELD_TRIALS.md`, `landworks/scripts/hydraulic_model.gd`, `earthworks.gd`, `sandbox_world.gd`.
+**Repository:** https://github.com/sn97ty8yn4-jpg/landworks — existing `docs/EARTHWORKS.md`, `docs/archive/V06_FIELD_TRIALS.md`, `landworks/scripts/hydraulic_model.gd`, `earthworks.gd`, `sandbox_world.gd`.
 
 **v1.0 authoring status:** Specification drafted from repository inspection and external technical references. No code edits, tests, simulation execution, calibration measurements or repository commits are claimed in this document.

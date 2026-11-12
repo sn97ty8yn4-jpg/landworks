@@ -44,7 +44,7 @@ Interactive controller driving in the actual Tinybox fork, imported GLB machiner
 3. To run **all seven physics cases**, have Python 3 installed, and use:
 
    ```bat
-   RUN_FIELD_TESTS_WINDOWS.bat "C:\\path\\to\\Godot_v4.6-stable_win64_console.exe"
+   tools/windows/RUN_FIELD_TESTS_WINDOWS.bat "C:\\path\\to\\Godot_v4.6-stable_win64_console.exe"
    ```
 
    Alternatively:
