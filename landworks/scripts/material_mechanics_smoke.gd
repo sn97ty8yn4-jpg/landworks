@@ -29,6 +29,12 @@ func _run() -> void:
     check(soil.bucket_inventory.mass() == before,"Replay duplicated mass")
     var second: Dictionary = soil.propose_cut(Vector3(4.6,0.4,2.9),Vector3(4.9,0.4,2.9),0.76,0.18)
     soil.commit_cut(second,1e8,1e8,42)
+    # Short of force: a proportionally thinner slice, not a dead stall.
+    var third: Dictionary = soil.propose_cut(Vector3(-1.2,0.3,-0.8),Vector3(-0.9,0.3,-0.8),0.76,0.2)
+    var half: Dictionary = soil.commit_cut(third,float(third["force_n"])*0.5,1e8,43)
+    check(float(third["volume_m3"])>0.0,"Partial-force proposal found no soil")
+    check(absf(float(half["volume_m3"])-float(third["volume_m3"])*0.5)<1e-9,"Half force did not take a half slice")
+    check(soil.partial_cuts>0,"Partial cut not recorded")
     check(soil.bucket_inventory.dry.size() == 2,"Mixed scoop lost a constituent")
     var restored = BATCH.restore(soil.bucket_inventory.save())
     check(absf(restored.mass()-soil.bucket_inventory.mass())<1e-9,"Batch round-trip lost mass")

@@ -11,6 +11,7 @@ var initial_mass: Dictionary = {}
 var terrain_revision := 0
 var last_receipt_id := 0
 var rejected_cuts := 0
+var partial_cuts := 0
 
 # 81×81 heightfield / 0.225m cells. Doubles spatial resolution in each axis
 # without changing the physical 18m work area or volume accounting.
@@ -29,6 +30,11 @@ const MAX_PARTICLES := 800
 const PARCEL_M3 := 0.00075
 const MAX_BUCKET_M3 := 0.24
 const GRAVITY := 9.81
+# Steepest in-situ face the 0.225 m grid represents (true vertical is not
+# resolvable on a heightfield).
+const MAX_FACE_DEG := 85.0
+# Legacy (non-mechanics) cutting edge allowance kept for old fixtures only.
+const LEGACY_EDGE_DROP_M := 0.045
 
 const SOIL_TYPES := {
     "gravel": {"density": 1700.0, "repose_deg": 36.0,
@@ -38,6 +44,10 @@ const SOIL_TYPES := {
 }
 
 var height_values := PackedFloat32Array()
+# Thickness (m) of disturbed/loose material at the top of each column.
+# Deposited spoil, slumped debris and failed faces are loose; the rest is
+# undisturbed bank material that can stand on a cut face by cohesion.
+var loose_depth := PackedFloat32Array()
 var material_ids := PackedByteArray()
 var mobile: Array[Dictionary] = []
 var terrain_mesh: MeshInstance3D
@@ -83,6 +93,8 @@ func _soil_type(i: int, j: int) -> String:
 func _initialise_data() -> void:
     height_values.resize(N * N)
     material_ids.resize(N * N)
+    loose_depth.resize(N * N)
+    loose_depth.fill(0.0)
     for j in range(N):
         for i in range(N):
             var x := (i - HALF) * CELL
@@ -283,7 +295,10 @@ func propose_cut(start: Vector3, finish: Vector3, tool_width_m: float,
     var moved := movement.length()
     if moved < (0.00001 if material_mechanics else 0.018) or bucket_room_m3 <= 0.00001 or not has_position(finish):
         return {"volume_m3": 0.0, "force_n": 0.0}
-    var cut_level := minf(start.y, finish.y) - position.y - 0.045
+    # Mechanics mode: start/finish ARE the steel cutting edge (the caller
+    # passes the toe's lowest front edge), so cut exactly there. The legacy
+    # path kept a fixed 45 mm allowance below its reference point.
+    var cut_level := minf(start.y, finish.y) - position.y - (0.0 if material_mechanics else LEGACY_EDGE_DROP_M)
     var segment_a := Vector2(start.x, start.z)
     var segment_b := Vector2(finish.x, finish.z)
     var width_sq := pow(maxf(0.25, tool_width_m * 0.52), 2)
@@ -343,11 +358,19 @@ func commit_cut(proposal: Dictionary, available_force: float, available_work: fl
     var force := float(proposal["force_n"])
     last_cut_force_n = force
     peak_cut_force_n = maxf(peak_cut_force_n,force)
-    if receipt_id <= last_receipt_id or int(proposal["revision"]) != terrain_revision or available_force < force or available_work <= 0.0:
+    if receipt_id <= last_receipt_id or int(proposal["revision"]) != terrain_revision or available_work <= 0.0 or available_force <= 0.0:
+        rejected_cuts += 1
+        return empty
+    if not material_mechanics and available_force < force:
         rejected_cuts += 1
         return empty
     last_receipt_id = receipt_id
     var fraction := minf(1.0,available_work/maxf(force*float(proposal["travel_m"]),1e-9))
+    # Short of force the tooth takes a thinner slice rather than refusing the
+    # whole cut. Removed volume scales with the force actually mobilised.
+    var force_fraction := clampf(available_force/maxf(force,1e-9),0.0,1.0)
+    if force_fraction < 1.0: partial_cuts += 1
+    fraction = minf(fraction,force_fraction)
     var volume := 0.0
     var loose := 0.0
     for entry in proposal["entries"]:
@@ -362,13 +385,16 @@ func commit_cut(proposal: Dictionary, available_force: float, available_work: fl
         else:
             height_values[id] -= amount/(CELL*CELL)
             loose += amount
+        # Cutting removes from the top: any loose cover goes first.
+        loose_depth[id] = clampf(loose_depth[id]-amount/(CELL*CELL),0.0,maxf(0.0,height_values[id]-BEDROCK_HEIGHT))
         volume += amount
     if volume > 0.0:
         terrain_dirty = true
         extracted_total_m3 += volume
         cut_events += 1
         terrain_revision += 1
-    return {"volume_m3": volume, "loose_m3":loose,"force_n": force,
+    return {"volume_m3": volume, "loose_m3":loose,"force_n": force*fraction,
+        "fraction":fraction,
         "work_j":force*float(proposal["travel_m"])*fraction,
         "gravel_m3":float(proposal["gravel_m3"])*fraction,
         "clay_m3":float(proposal["clay_m3"])*fraction}
@@ -434,13 +460,15 @@ func _deposit_particle(p: Dictionary) -> void:
     var coords := _index_from_world(p["pos"])
     if has_position(p["pos"]):
         var id := _idx(coords.x, coords.y)
-        height_values[id] += volume / (CELL * CELL)
-        # Deposited cohesive clay must actually turn the receiving cell
-        # into clay; volume and material appearance must stay coupled.
-        material_ids[id] = 1 if str(p["material"]) == "clay" else 0
         if material_mechanics:
+            # Height and material ID are derived from the column inventory.
             columns[id].absorb(p["batch"])
             _sync_column(id)
+        else:
+            height_values[id] += volume / (CELL * CELL)
+            # Deposited clay must turn the receiving cell into clay.
+            material_ids[id] = 1 if str(p["material"]) == "clay" else 0
+        loose_depth[id] += volume / (CELL * CELL)
         deposited_total_m3 += volume
         terrain_dirty = true
     else:
@@ -479,32 +507,150 @@ func _step_mobile(dt: float) -> void:
         mobile[n] = p
     mobile_dirty = true
 
+func _strength(id: int) -> Dictionary:
+    # Drained c-phi and bulk unit weight for the in-situ column. Disturbance
+    # degrades peak toward residual cohesion, matching cut resistance.
+    if material_mechanics:
+        var col: MaterialBatch = columns[id]
+        if col.volume() <= 1e-9:
+            return {"c":0.0,"phi":deg_to_rad(33.0),"gamma":17000.0,"repose":deg_to_rad(37.0)}
+        var c := lerpf(col.weighted("effective_cohesion_peak_pa"),
+            col.weighted("effective_cohesion_residual_pa"),col.damage)
+        return {"c":c,"phi":deg_to_rad(col.weighted("phi_peak_deg")),
+            "gamma":col.mass()/col.volume()*GRAVITY,
+            "repose":deg_to_rad(col.weighted("repose_static_deg"))}
+    BATCH.setup()
+    var key := "moist_silty_clay" if material_ids[id] == 1 else "loose_gravel"
+    var p: Dictionary = BATCH.profiles[key]
+    var soil: Dictionary = SOIL_TYPES["clay" if material_ids[id] == 1 else "gravel"]
+    return {"c":float(p["effective_cohesion_peak_pa"]),"phi":deg_to_rad(float(p["phi_peak_deg"])),
+        "gamma":float(soil["density"])*GRAVITY,"repose":deg_to_rad(float(soil["repose_deg"]))}
+
+static func culmann_critical_height(c: float, phi: float, gamma: float, beta: float) -> float:
+    # Culmann planar-wedge critical height of a face at angle beta.
+    if beta <= phi + 1e-4: return INF
+    return 4.0*c/gamma*sin(beta)*cos(phi)/maxf(1.0-cos(beta-phi),1e-9)
+
+static func stable_face_angle(c: float, phi: float, gamma: float, height: float) -> float:
+    # Steepest face (rad) that stands at this height. Hc falls monotonically
+    # with beta, so bisect between phi and the grid's steepest face.
+    var top := deg_to_rad(MAX_FACE_DEG)
+    if c <= 0.0 or height <= 0.0: return phi if c <= 0.0 else top
+    if culmann_critical_height(c,phi,gamma,top) >= height: return top
+    var lo := phi
+    var hi := top
+    for _n in range(18):
+        var mid := 0.5*(lo+hi)
+        if culmann_critical_height(c,phi,gamma,mid) >= height: lo = mid
+        else: hi = mid
+    return lo
+
+func _face_height(high: int, low: int, step: int, threshold: float) -> float:
+    # Measure the whole steep face, not one 0.225 m cell step: walk uphill
+    # from the high cell and downhill from the low cell while the gradient
+    # stays steeper than the friction angle.
+    var top := high
+    var toe := low
+    for _n in range(24):
+        var nxt := top - step
+        if nxt < 0 or nxt >= N*N or absi((nxt % N) - (top % N)) > 1: break
+        if height_values[nxt] - height_values[top] <= threshold: break
+        top = nxt
+    for _n in range(24):
+        var nxt := toe + step
+        if nxt < 0 or nxt >= N*N or absi((nxt % N) - (toe % N)) > 1: break
+        if height_values[toe] - height_values[nxt] <= threshold: break
+        toe = nxt
+    return height_values[top] - height_values[toe]
+
 func _slump(dt: float) -> void:
-    # Pairwise locally conservative height transfer. The repose threshold
-    # stops movement on shallow gradients; clay can hold steeper slopes.
-    for j in range(1, N - 2):
-        for i in range(1, N - 2):
+    # Two-state slope stability, evaluated on a snapshot and applied at once
+    # so the result does not depend on sweep order (no corner drift).
+    #  * Loose material (spoil, debris, failed faces) runs to its static
+    #    angle of repose.
+    #  * Undisturbed bank stands on a cut face by cohesion up to the Culmann
+    #    critical height for that face angle; beyond it the face fails and
+    #    the failed material becomes loose and runs to repose.
+    var rate := clampf(dt * 2.2, 0.0, 0.25)
+    var flows: Array[Vector2i] = []      # (donor, receiver)
+    var amounts := PackedFloat32Array()
+    var from_loose := PackedFloat32Array()
+    var outflow := PackedFloat32Array()
+    outflow.resize(N*N)
+    outflow.fill(0.0)
+    var strength_cache: Dictionary = {}
+    for j in range(1, N - 1):
+        for i in range(1, N - 1):
             var source_id := _idx(i, j)
-            for neighbor in [_idx(i + 1, j), _idx(i, j + 1)]:
-                var left: int = source_id if height_values[source_id] > height_values[neighbor] else neighbor
-                var right: int = neighbor if left == source_id else source_id
-                var mat: Dictionary = SOIL_TYPES["clay" if material_ids[left] == 1 else "gravel"]
-                var max_slope := tan(deg_to_rad(float(mat["repose_deg"]))) * CELL
-                var excess := height_values[left] - height_values[right] - max_slope
-                if excess <= 0.0:
-                    continue
-                var move_h := minf(excess * clampf(dt * 2.2, 0.0, 0.25),
-                    maxf(0.0, height_values[left] - BEDROCK_HEIGHT))
-                if move_h < 0.000001:
-                    continue
-                height_values[left] -= move_h
-                height_values[right] += move_h
-                if material_mechanics:
-                    columns[right].absorb(columns[left].split(move_h*CELL*CELL))
-                    _sync_column(left)
-                    _sync_column(right)
-                terrain_dirty = true
-                terrain_revision += 1
+            for k in range(2):
+                if (k == 0 and i >= N - 2) or (k == 1 and j >= N - 2): continue
+                var step := 1 if k == 0 else N
+                var neighbor := source_id + step
+                var dh := height_values[source_id] - height_values[neighbor]
+                if absf(dh) < 1e-6: continue
+                var high := source_id if dh > 0.0 else neighbor
+                var low := neighbor if dh > 0.0 else source_id
+                var walk := step if high == source_id else -step
+                dh = absf(dh)
+                if not strength_cache.has(high): strength_cache[high] = _strength(high)
+                var st: Dictionary = strength_cache[high]
+                var repose_excess := dh - tan(float(st["repose"])) * CELL
+                if repose_excess <= 0.0: continue
+                var available := maxf(0.0, height_values[high] - BEDROCK_HEIGHT)
+                var loose_here := minf(loose_depth[high], available)
+                var phi: float = st["phi"]
+                var face := _face_height(high, low, walk, tan(phi) * CELL)
+                var beta := stable_face_angle(float(st["c"]), phi, float(st["gamma"]), face)
+                var face_fails := dh > tan(beta) * CELL
+                var move_h := 0.0
+                var loose_part := 0.0
+                if face_fails:
+                    move_h = repose_excess * rate
+                    loose_part = minf(move_h, loose_here)
+                else:
+                    move_h = minf(repose_excess, loose_here) * rate
+                    loose_part = move_h
+                if move_h < 0.000001: continue
+                flows.append(Vector2i(high, low))
+                amounts.append(move_h)
+                from_loose.append(loose_part)
+                outflow[high] += move_h
+    if flows.is_empty(): return
+    # Never drain a column below bedrock or its loose layer below zero when
+    # several neighbours pull from it in the same pass.
+    for n in range(flows.size()):
+        var donor := flows[n].x
+        var cap := maxf(0.0, height_values[donor] - BEDROCK_HEIGHT)
+        var factor := 1.0 if outflow[donor] <= cap else cap / outflow[donor]
+        amounts[n] *= factor
+        from_loose[n] = minf(from_loose[n] * factor, amounts[n])
+    var moved := false
+    for n in range(flows.size()):
+        var donor := flows[n].x
+        var receiver := flows[n].y
+        var move_h := amounts[n]
+        if move_h < 0.000001: continue
+        var arrived := move_h
+        if material_mechanics:
+            var piece := columns[donor].split(move_h*CELL*CELL)
+            # Failed bank is disturbed material once it has moved; it bulks.
+            piece.loosen()
+            arrived = piece.volume()/(CELL*CELL)
+            columns[receiver].absorb(piece)
+            _sync_column(donor)
+            _sync_column(receiver)
+        else:
+            height_values[donor] -= move_h
+            height_values[receiver] += move_h
+        loose_depth[donor] = maxf(0.0, loose_depth[donor] - from_loose[n])
+        loose_depth[receiver] += arrived
+        moved = true
+    for n in range(flows.size()):
+        var d := flows[n].x
+        loose_depth[d] = minf(loose_depth[d], maxf(0.0, height_values[d] - BEDROCK_HEIGHT))
+    if moved:
+        terrain_dirty = true
+        terrain_revision += 1
 
 func _physics_process(delta: float) -> void:
     _step_mobile(delta)

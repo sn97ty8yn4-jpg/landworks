@@ -453,8 +453,17 @@ func _cut_budget(lip: Vector3, direction: Vector3, delta: float) -> Dictionary:
     power = minf(power,float(digger.hydraulic_state.get("hydraulic_power_kw",0.0))*1000.0)
     return {"force":force if active else 0.0,"work":power*delta}
 
+func _cutting_edge_local() -> Vector3:
+    # The steel that actually meets the soil: the front-bottom edge of the
+    # bucket's collision toe. The old reference point sat 130 mm above it.
+    var toe := digger.bucket.get_node_or_null("GroundHandlingToe") as CollisionShape3D
+    if toe != null and toe.shape is BoxShape3D:
+        var size: Vector3 = (toe.shape as BoxShape3D).size
+        return toe.position + Vector3(0.0, -0.5*size.y, -0.5*size.z)
+    return Vector3(0,0,-digger.BUCKET_LENGTH)
+
 func _update_material_mechanics(delta: float) -> void:
-    var lip: Vector3 = digger.bucket.to_global(Vector3(0,0,-digger.BUCKET_LENGTH))
+    var lip: Vector3 = digger.bucket.to_global(_cutting_edge_local())
     if not previous_bucket_lip_valid:
         var state := PhysicsServer3D.body_get_direct_state(digger.bucket.get_rid())
         if state != null: bucket_empty_center = state.center_of_mass_local
@@ -481,9 +490,16 @@ func _update_material_mechanics(delta: float) -> void:
         var proposal: Dictionary = earth.propose_cut(lip,lip+velocity*delta,0.76,room)
         var resistance := float(proposal.get("force_n",0.0))
         if resistance>0.0:
-            digger.bucket.apply_force(-direction*resistance,arm)
             pending_soil_contact = _cut_budget(lip,direction,delta)
             pending_soil_contact["direction"] = direction
+            # With the arm powered, the soil can only push back with the force
+            # the thinner slice it actually takes mobilises (commit_cut scales
+            # the slice to the same budget). Unpowered pushing (tracks only)
+            # still meets the full bank resistance, so the bucket cannot
+            # ghost through a bank without cutting.
+            var budget_force := float(pending_soil_contact["force"])
+            var reaction := resistance if budget_force <= 0.0 else minf(resistance,budget_force)
+            digger.bucket.apply_force(-direction*reaction,arm)
     previous_bucket_lip = lip
     soil_bucket_material = earth.bucket_inventory.kind()
     var manual_dump := spoil_dump_request or (not smoke and active_machine==1 and Input.is_key_pressed(KEY_R))

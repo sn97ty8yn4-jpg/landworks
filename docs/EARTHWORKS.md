@@ -105,3 +105,36 @@ material ID updates as well. Mass conservation is still required across
 ground, bucket, airborne material and any spill beyond the work pad. A
 material-specific soil atlas and true particle-particle DEM remain future
 steps; the system is still a hybrid heightfield/parcel solver.
+
+## Slope stability, cutting edge and partial cuts (12 November 2026)
+
+**Two-state slopes.** Each cell tracks `loose_depth`, the thickness of
+disturbed material on top (dumped spoil, slumped debris, failed faces).
+Loose material runs to its static angle of repose from the v1.1 material
+profile. Undisturbed bank stands on a cut face by cohesion: the steepest
+stable face angle is found from the Culmann critical height
+`Hc = 4c/γ · sinβ·cosφ / (1 − cos(β − φ))` for the measured face height,
+using drained c and φ (peak, degraded toward residual by disturbance). A
+face steeper than that fails, and the failed material becomes loose. With
+the illustrative profiles, moist silty clay stands near-vertical well past
+the 3 m pad depth; bank gravel (c ≈ 1 kPa) holds roughly 0.5 m vertical and
+lies back beyond that. The grid's steepest representable face is 85°.
+
+**Order-independent update.** All transfers are computed from one snapshot
+and applied together, so spoil no longer creeps toward one corner of the
+pad. Donor columns are scaled so several neighbours cannot over-drain them.
+
+**Cutting edge.** The material path cuts at the front-bottom edge of the
+bucket's collision toe, the steel that actually meets the soil. The old
+reference point sat 130 mm above it with a fixed 45 mm allowance, so
+roughly 85 mm of steel passed through soil without cutting it. The legacy
+fixture path keeps its 45 mm allowance.
+
+**Partial cuts.** Short of force, the tooth takes a proportionally thinner
+slice instead of rejecting the cut, and the soil reaction applied to the
+bucket is capped at the force the arm can deliver. Pushing with the tracks
+alone (no arm motion) still meets the full bank resistance.
+
+These remain gameplay calibrations. Profile strengths are unverified, and
+the model has no pore-pressure, time-dependent (drained-to-undrained)
+softening or tension-crack behaviour.
