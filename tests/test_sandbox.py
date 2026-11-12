@@ -14,12 +14,21 @@ class SandboxIntegrationTests(unittest.TestCase):
         project = (ROOT / "project.godot").read_text()
         self.assertIn('run/main_scene="res://landworks/scenes/sandbox_world.tscn"', project)
         src = (ROOT / "landworks/scripts/sandbox_world.gd").read_text()
+        # Each token has to appear in the file that owns the behaviour. The
+        # tow hitch and the lifting strap now build their pin constraints in
+        # coupler.gd, so the real-joint check follows them there, and the
+        # sandbox must still be wired to the thing that builds them.
+        owned_elsewhere = {
+            "_drive_tracks": "landworks/scripts/sandbox_excavator.gd",
+            "PinJoint3D.new()": "landworks/scripts/coupler.gd",
+        }
         for token in ("sandbox_excavator.gd", "tractor.gd", "work_trailer.gd",
-                      "PinJoint3D.new()", "RigidBody3D.new()", "_drive_tracks",
-                      "landworks/scripts/ground_response.gd", "sandbox_summary.csv"):
-            if token == "_drive_tracks":
-                machine = (ROOT / "landworks/scripts/sandbox_excavator.gd").read_text()
-                self.assertIn(token, machine)
+                      "coupler.gd", "PinJoint3D.new()", "RigidBody3D.new()",
+                      "_drive_tracks", "landworks/scripts/ground_response.gd",
+                      "sandbox_summary.csv"):
+            owner = owned_elsewhere.get(token)
+            if owner is not None:
+                self.assertIn(token, (ROOT / owner).read_text())
             else:
                 self.assertIn(token, src)
 
