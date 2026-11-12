@@ -114,6 +114,18 @@ func _make_collision() -> void:
     var mat := PhysicsMaterial.new()
     mat.friction = 0.80
     ground.physics_material_override = mat
+    if material_mechanics:
+        # Separate from the mutable surface: the bucket's soil-contact
+        # exception must never permit digging through the refusal floor.
+        var bedrock := StaticBody3D.new()
+        bedrock.name = "RefusalSubstrate"
+        add_child(bedrock)
+        var base := CollisionShape3D.new()
+        var box := BoxShape3D.new()
+        box.size = Vector3((N-1)*CELL,0.30,(N-1)*CELL)
+        base.shape = box
+        base.position.y = BEDROCK_HEIGHT-0.15
+        bedrock.add_child(base)
 
 func _make_visuals() -> void:
     terrain_mesh = MeshInstance3D.new()

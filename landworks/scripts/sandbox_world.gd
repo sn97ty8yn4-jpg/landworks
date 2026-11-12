@@ -191,6 +191,11 @@ func _build_earthworks() -> void:
     earth.name = "GranularExcavationPad_GravelAndClay"
     earth.position = Vector3(0, 0, -12)
     add_child(earth)
+    if earth.material_mechanics:
+        # Mutable soil has its own force/work contact solver. A hard contact
+        # against the same heightfield arrests the toe before it can cut.
+        # Keep normal bucket collisions with yard, bedrock and loose objects.
+        digger.bucket.add_collision_exception_with(earth.get_node("MutableSoilCollider"))
     earthwork_start_m3 = earth.ground_volume_m3()
     bucket_empty_mass = digger.bucket.mass
 
