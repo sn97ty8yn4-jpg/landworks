@@ -13,13 +13,17 @@ const EARTH = preload("res://landworks/scripts/earthworks.gd")
 const ART = preload("res://landworks/scripts/art_scene.gd")
 const MACHINE_ART = preload("res://landworks/scripts/engineered_machine_art.gd")
 const RIGGED_ART = preload("res://landworks/scripts/rigged_machine_art.gd")
+const COUPLER = preload("res://landworks/scripts/coupler.gd")
+const TRACTOR_HITCH_LOCAL := Vector3(0, -0.20, 1.30)
 
 const SMOKE_DURATION_S := 21.0
 const CLAY_START_X := 18.0
 
 var tractor: RigidBody3D
 var trailer: RigidBody3D
-var hitch: PinJoint3D
+var hitch_coupler: Node3D
+var hitch: PinJoint3D:
+    get: return hitch_coupler.joint if hitch_coupler != null else null
 var digger: Node3D
 var props: Array[RigidBody3D] = []
 var prop_surfaces: Dictionary = {}
@@ -29,7 +33,8 @@ var active_machine := 0
 var toggle_down := false
 var legacy_down := false
 var hook_down := false
-var hook_status := "Press G / Square to hook the nearest loose object"
+var drop_down := false
+var hook_status := "Strap takes hold near a load; G releases it"
 var orbit_yaw := 0.72
 var show_help := false
 var help_down := false
@@ -71,6 +76,13 @@ var previous_blade_edge := Vector3.ZERO
 var previous_blade_edge_valid := false
 var blade_pushed_m3 := 0.0
 var trailer_bin := -1
+var start_state: Dictionary = {}
+var start_targets: Dictionary = {}
+var start_tip := 0.0
+var reset_count := 0
+var reset_down := false
+var settle_tick := 0
+var start_settled := false
 var tray_discharged_m3 := 0.0
 var camera_zoom := 1.0
 var inspection_view := false
@@ -100,6 +112,8 @@ func _ready() -> void:
     excavator_start = digger.undercarriage.global_position
     prop_start = digger.test_mass.global_position
     initial_boom = digger._joint_angle("boom")
+    # Snapshot for the F8 global reset, taken once everything is placed.
+    _capture_start_state()
     if smoke:
         tractor.set("benchmark_enabled", true)
         digger.scripted_test = true
@@ -172,20 +186,25 @@ func _build_machines() -> void:
     tractor.position = Vector3(-10.0, 0.78, 9.0)
     tractor.work_speed_limit_kmh = 15.0
     add_child(tractor)
-    var hitch_world: Vector3 = tractor.to_global(Vector3(0, -0.20, 1.30))
+    var hitch_world: Vector3 = tractor.to_global(TRACTOR_HITCH_LOCAL)
     trailer = TRAILER.new()
     trailer.payload_kg = 400.0
     add_child(trailer)
     trailer.global_position = hitch_world - trailer.global_transform.basis * trailer.HITCH_POINT
     # The tipping tray is a sibling rigid body on a real rear pin.
     trailer.build_tray(self)
-    hitch = PinJoint3D.new()
-    hitch.name = "Live_Tractor_Trailer_Hitch"
-    add_child(hitch)
-    hitch.global_position = hitch_world
-    hitch.node_a = hitch.get_path_to(tractor)
-    hitch.node_b = hitch.get_path_to(trailer)
-    hitch.exclude_nodes_from_collision = true
+    # The drawbar is no longer welded on. Reverse the ball under the ring and
+    # it couples itself; H drops it again. Starts coupled because the trailer
+    # is placed on the ball, so the first tick captures.
+    hitch_coupler = COUPLER.new()
+    hitch_coupler.name = "Live_Tractor_Trailer_Hitch"
+    hitch_coupler.capture_radius = 0.45
+    hitch_coupler.capture_speed = 1.6
+    # Split the difference so neither the tractor nor the drawbar is yanked
+    # the whole way when they capture off-centre.
+    hitch_coupler.engage_mix = 0.5
+    add_child(hitch_coupler)
+    _update_hitch()
     digger = E.new()
     digger.name = "Excavator"
     add_child(digger)
@@ -328,6 +347,9 @@ func _build_ui() -> void:
     instructions.add_theme_color_override("font_color",Color("#f9ecd5"))
     instructions.text = "LANDWORKS  •  CONTROLS\n" +         "Tab / Triangle — change machine     Z/C — orbit camera\n" +         "Tractor: W/S travel, A/D steer; PS R2/L2 travel + left stick\n" +         "Excavator: W/S tracks, A/D differential pivot\n" +         "I/K boom  |  O/L stick  |  P/; bucket  |  Q/E slew\n" +         "G / Square — bucket hook     R — dump soil     F12 — old yard\n" +         "Mouse wheel — zoom     F2 — inspection view     F1 — close help"
     instructions.text += "\nT/Y — dozer blade   [ / ] — boom offset   N/B — tip trailer"
+    instructions.text += "\nF8 — reset all machines to start (the ground stays as dug)"
+    instructions.text += "\nH — drop the hitch; reverse the ball under the ring to re-couple"
+    instructions.text += "\nG — release the strap; it takes hold on its own near a load"
     instructions.text += "\nV — cab/follow   Arrows / right-drag — look   Home — centre"
     help_panel.add_child(instructions)
 
@@ -367,6 +389,13 @@ func _current_surface(x: float) -> Dictionary:
 func _physics_process(delta: float) -> void:
     # Machine and loose-body contact forces all run in the same Jolt world.
     tractor.ground_mu_override = 0.53 if tractor.global_position.x > CLAY_START_X else T.GROUND_MU
+    _update_hitch()
+    digger.update_strap(props)
+    if settle_tick >= 0:
+        settle_tick += 1
+        if settle_tick >= 180:
+            _resettle_start_state()
+            settle_tick = -1
     digger.surface_profile = _current_surface(digger.undercarriage.global_position.x)
     # Trailer tipping: real hinge torque, not a scripted tray transform.
     if not smoke and is_instance_valid(trailer):
@@ -397,9 +426,12 @@ func _physics_process(delta: float) -> void:
     max_prop_travel = maxf(max_prop_travel, Vector2(delta_crate.x, delta_crate.z).length())
     max_boom_change = maxf(max_boom_change,
         absf(rad_to_deg(digger._joint_angle("boom") - initial_boom)))
-    var hitch_gap := tractor.to_global(Vector3(0, -0.20, 1.30)).distance_to(
+    var hitch_gap := tractor.to_global(TRACTOR_HITCH_LOCAL).distance_to(
         trailer.to_global(trailer.HITCH_POINT))
-    max_hitch_error = maxf(max_hitch_error, hitch_gap)
+    # Only a coupled hitch has an error to report; an uncoupled trailer is
+    # simply parked, not a joint that has pulled apart.
+    if hitch_coupler != null and hitch_coupler.is_coupled():
+        max_hitch_error = maxf(max_hitch_error, hitch_gap)
     var up: Vector3 = digger.undercarriage.global_transform.basis.y.normalized()
     max_tilt = maxf(max_tilt, rad_to_deg(acos(clampf(up.dot(Vector3.UP), -1.0, 1.0))))
     peak_pressure = maxf(peak_pressure, float(digger.hydraulic_state.get("pressure_mpa", 0.0)))
@@ -613,6 +645,10 @@ func _process(delta: float) -> void:
             get_tree().change_scene_to_file("res://landworks/scenes/test_yard.tscn")
             return
         legacy_down = go_legacy
+        var reset_pressed := Input.is_key_pressed(KEY_F8)
+        if reset_pressed and not reset_down:
+            hook_status = reset_machines()
+        reset_down = reset_pressed
         var joy := CI.joy_id()
         var hook_pressed := active_machine == 1 and (
             Input.is_key_pressed(KEY_G) or
@@ -620,6 +656,14 @@ func _process(delta: float) -> void:
         if hook_pressed and not hook_down:
             hook_status = digger.toggle_hook(props)
         hook_down = hook_pressed
+        var drop_pressed := Input.is_key_pressed(KEY_H)
+        if drop_pressed and not drop_down and hitch_coupler != null:
+            if hitch_coupler.is_coupled():
+                hitch_coupler.release()
+                hook_status = "Hitch dropped: drive clear, then reverse back on"
+            else:
+                hook_status = "Hitch open: reverse the ball under the ring"
+        drop_down = drop_pressed
         if active_machine == 0:
             orbit_yaw -= CI.axis(joy, JOY_AXIS_RIGHT_X) * delta * 1.4
         orbit_yaw += (float(Input.is_key_pressed(KEY_C)) -
@@ -651,7 +695,11 @@ func _process(delta: float) -> void:
         status.text = "KUBOTA B7100 HST  •  FARM WORKS\n"
         status.text += "Speed %.1f km/h   |   HST %.1f kW   |   %s\n" % [
             speed, tractor.last_hst_power_kw,ground_label]
-        status.text += "400 kg trailer  •  Tab switch machine  •  F1 controls"
+        var coupled: bool = hitch_coupler != null and hitch_coupler.is_coupled()
+        var hitch_text: String = "Hitched" if coupled else (
+            "READY — hold still to couple" if hitch_coupler != null and hitch_coupler.in_zone()
+            else "Unhitched (H)")
+        status.text += "400 kg trailer  •  %s  •  Tab switch  •  F1 controls" % hitch_text
     else:
         status.text = "KUBOTA KX080-3  •  EARTHMOVING\n"
         status.text += "Hyd %.1f MPa  |  %.1f L/min  |  Ground %d/4\n" % [
@@ -706,3 +754,85 @@ func _update_tray_discharge(delta: float) -> void:
     var direction: Vector3 = (trailer.tray.global_basis.z-Vector3.UP*0.35).normalized()
     tray_discharged_m3 += earth.discharge_container(trailer_bin,sill,direction,
         minf(held,rate*delta))
+
+func _update_hitch() -> void:
+    # The tow ball looks for the trailer's ring every tick. Capture is wide
+    # enough to forgive a rough reverse and still refuses a load you are
+    # driving past, because the pair must be near rest relative to each other.
+    if hitch_coupler == null or not is_instance_valid(trailer):
+        return
+    hitch_coupler.update_capture(tractor.to_global(TRACTOR_HITCH_LOCAL), tractor,
+        [{"body":trailer,"point":trailer.to_global(trailer.HITCH_POINT)}])
+    trailer.hitched = hitch_coupler.is_coupled()
+
+func _resettable_bodies() -> Array[RigidBody3D]:
+    var bodies: Array[RigidBody3D] = []
+    for body in [tractor, trailer, trailer.tray, digger.undercarriage,
+            digger.upper, digger.king_post, digger.boom, digger.stick,
+            digger.bucket, digger.dozer_blade]:
+        if is_instance_valid(body):
+            bodies.append(body)
+    for item in props:
+        if is_instance_valid(item):
+            bodies.append(item)
+    return bodies
+
+func _capture_start_state() -> void:
+    start_state.clear()
+    for body in _resettable_bodies():
+        start_state[body] = body.global_transform
+    start_targets = digger.target_angles.duplicate()
+    start_tip = trailer.tip_target
+
+func reset_machines() -> String:
+    # A deliberate restore, not a physics path: every machine body is placed
+    # back where it started and its velocities cleared. Two things make that
+    # safe rather than a cheat. Anything the machines were carrying is first
+    # released as loose material where it actually stood, so the reset cannot
+    # create or destroy soil; and the solver's cutting-edge history is dropped,
+    # so the jump home is never mistaken for an enormous cut on the next tick.
+    # The ground itself is left exactly as dug.
+    if digger.strap != null:
+        digger.strap.release()
+    if hitch_coupler != null:
+        hitch_coupler.release()
+    if earth != null:
+        var carried: float = earth.bucket_inventory.volume()
+        if carried > 0.0:
+            earth.release_soil(digger.hook_point(), Vector3.DOWN, carried)
+        if trailer_bin >= 0 and is_instance_valid(trailer.tray):
+            var held: float = earth.container_volume_m3(trailer_bin)
+            if held > 0.0:
+                earth.discharge_container(trailer_bin,
+                    trailer.tray.to_global(Vector3(0, 0.45, -1.0)), Vector3.DOWN, held)
+    for body in start_state:
+        if not is_instance_valid(body):
+            continue
+        body.global_transform = start_state[body]
+        body.linear_velocity = Vector3.ZERO
+        body.angular_velocity = Vector3.ZERO
+        body.force_update_transform()
+    digger.target_angles = start_targets.duplicate()
+    digger.slew_target_rad = 0.0
+    trailer.tip_target = start_tip
+    previous_bucket_lip_valid = false
+    previous_blade_edge_valid = false
+    previous_blade_edge = Vector3.ZERO
+    pending_soil_contact.clear()
+    _update_hitch()
+    reset_count += 1
+    return "Machines reset to start condition (the ground stays as you dug it)"
+
+func _resettle_start_state() -> void:
+    # Machines and loads settle in the first moments: the crate drops onto the
+    # ground, the tray takes up on its hinge. Fold that into the snapshot so
+    # F8 restores the scene as it looks when you take the controls, rather
+    # than a pre-settle pose that immediately sags again. A body that has
+    # already moved more than a metre was moved by the player, so its spawn
+    # pose stays the thing to restore.
+    for body in start_state:
+        if not is_instance_valid(body):
+            continue
+        if body.global_position.distance_to(Vector3(start_state[body].origin)) <= 1.0:
+            start_state[body] = body.global_transform
+    start_settled = true

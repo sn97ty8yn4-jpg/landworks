@@ -19,7 +19,11 @@ Tab switches machines; W/S drive; A/D steer; Z/C orbit; mouse wheel zooms;
 F2 toggles inspection view; F1 displays the full controls. Excavator controls:
 I/K boom, O/L stick, P/semicolon bucket, Q/E slew, R dump and G load hook.
 T/Y raise and lower the dozer blade, `[` and `]` swing the boom offset, and
-N/B tip and lower the trailer tray. V enters/leaves the cab. Use arrow keys or
+N/B tip and lower the trailer tray. H drops the trailer hitch: drive clear,
+reverse the ball back under the ring and it couples itself. The excavator's
+lifting strap takes hold on its own near a loose load; G releases it.
+F8 resets every machine and load to the start condition, leaving the ground
+exactly as you dug it. V enters/leaves the cab. Use arrow keys or
 right-drag to look around; Home centres the view. The modelled cab interior is
 a single mesh, so its joysticks and travel levers no longer animate.
 

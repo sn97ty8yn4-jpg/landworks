@@ -15,6 +15,8 @@ const HITCH_POINT := Vector3(0.0, 0.50, -2.00)
 const TRAY_PIN := Vector3(0.0, 0.725, 0.84)
 const TRAY_SIZE := Vector3(1.358, 0.44, 2.186)
 const CHASSIS_SIZE := Vector3(1.32, 0.30, 2.05)
+# Jockey foot under the drawbar, measured from the model.
+const JOCKEY_FOOT := Vector3(-0.30, 0.0, -1.86)
 const TIP_LIMIT_RAD := 0.785
 const TIP_TORQUE_LIMIT_NM := 26000.0
 
@@ -29,6 +31,11 @@ var last_contact_count := 0
 var tray: RigidBody3D
 var tray_joint: HingeJoint3D
 var tip_target := 0.0
+# Set by the sandbox each tick. An uncoupled single-axle trailer rests on its
+# jockey stand; without it the drawbar simply noses into the ground.
+var hitched := true
+var jockey_contact := false
+var jockey_shape: CollisionShape3D
 
 func _ready() -> void:
 	name = "SingleAxleTippingTrailer"
@@ -49,6 +56,17 @@ func _ready() -> void:
 	# Drawbar out to the ring hitch, and the axle beam.
 	M.block(self, Vector3(0.14, 0.14, 1.60), Vector3(0, 0.50, -1.25), Color("#2d3233"))
 	M.block(self, Vector3(1.42, 0.16, 0.22), Vector3(0, 0.365, 0), Color("#2d3233"))
+	# Jockey stand: a foot under the drawbar, deployed whenever unhitched.
+	var jockey_box := BoxShape3D.new()
+	jockey_box.size = Vector3(0.18, 0.10, 0.18)
+	jockey_shape = CollisionShape3D.new()
+	jockey_shape.name = "JockeyStandFoot"
+	jockey_shape.shape = jockey_box
+	jockey_shape.position = JOCKEY_FOOT + Vector3(0, 0.05, 0)
+	jockey_shape.disabled = true
+	add_child(jockey_shape)
+	M.block(self, Vector3(0.10, 0.52, 0.10),
+		JOCKEY_FOOT + Vector3(0, 0.30, 0), Color("#2d3233"))
 	for side in [-HALF_TRACK, HALF_TRACK]:
 		var wheel_root := Node3D.new()
 		wheel_root.position = Vector3(side, WHEEL_RADIUS, 0)
@@ -110,6 +128,7 @@ func _physics_process(delta: float) -> void:
 	if is_instance_valid(tray_joint):
 		tray_joint.set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY,
 			clampf(1.8 * (tip_target - tip_angle_rad()), -0.4, 0.4))
+	_support_on_jockey()
 	last_contact_count = 0
 	var forward := -global_transform.basis.z
 	var sideways := global_transform.basis.x
@@ -141,3 +160,18 @@ func _physics_process(delta: float) -> void:
 		apply_force(Vector3.UP * spring_force + sideways * lateral_force + forward * longitudinal_drag,
 			point_offset)
 		wheel_visuals[i].rotate_x(longitudinal_speed * delta / wheel_radius)
+
+func _support_on_jockey() -> void:
+	# Parked on its stand, the trailer rests on the jockey foot at the
+	# drawbar. This is a contact force against whatever is under the foot,
+	# not a frozen transform: shunting the trailer still moves it.
+	jockey_contact = false
+	if hitched:
+		return
+	# The stand is a real collision shape, enabled only when the drawbar is
+	# not on a ball. Letting the solver handle the contact avoids inventing a
+	# spring, and shunting the parked trailer still moves it.
+	if jockey_shape == null:
+		return
+	jockey_shape.disabled = hitched
+	jockey_contact = not hitched

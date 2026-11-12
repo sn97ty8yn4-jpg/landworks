@@ -73,6 +73,65 @@ That store is counted in `mass_totals()`, so a push is conserved like every
 other movement. The force available is whatever the tracks actually developed
 that tick, so a blade load the machine cannot push simply stalls.
 
+## Couplings
+
+`landworks/scripts/coupler.gd` serves both the tow hitch and the lifting
+strap. Capture is deliberately generous about *where* the two points are and
+strict about *what* the machine is doing: the points must fall inside the
+capture radius **and** be nearly at rest relative to each other. A released
+pair stays disarmed until it has separated past `radius * 1.7`, so a machine
+can always drive away from what it just dropped. Both are real Jolt pin
+constraints, so a load too heavy to lift or tow still refuses to follow.
+
+| | Tow hitch | Lifting strap |
+| --- | --- | --- |
+| Carrier point | tow ball, `(0, -0.20, 1.30)` on the tractor | bucket tooth, `BUCKET_TIP` |
+| Target point | the trailer's ring hitch | each loose load's origin |
+| Capture radius | 0.45 m | 0.95 m |
+| Relative speed limit | 1.6 m/s | 2.2 m/s |
+| Pin placed at | midway, so neither body is yanked the whole way | the tooth, so the load hangs and swings |
+| Release | `H` | `G` / Square |
+
+The hitch starts coupled because the trailer is parked on the ball. Press `H`
+to drop it, drive clear, reverse back and it couples itself; the HUD reads
+`Hitched`, `READY — hold still to couple` or `Unhitched (H)`, driven by the
+same predicate as the capture rule rather than a separate guess.
+
+The strap takes hold on its own. `G` is the release; pressed with nothing held
+it re-arms and tries immediately, so an operator can insist rather than wait.
+`load_hook_joint` and `attached_load` are now read-through views of the
+coupler's live constraint rather than cached copies.
+
+An uncoupled single-axle trailer would nose into the ground, so the jockey
+stand is a real collision shape under the drawbar, enabled whenever the
+trailer is unhitched. Parked, the drawbar settles 4.8 degrees nose-down onto
+the foot and holds. Letting the solver own that contact avoids inventing a
+support spring, and the parked trailer can still be shunted.
+
+## Global reset
+
+`F8` restores every machine, the trailer, its tray and the loose loads to the
+start condition. It is a deliberate restore, not a physics path, and two
+things keep it from being a cheat:
+
+* **It cannot create or destroy soil.** Anything the machines were carrying is
+  released as loose material where it actually stood before the bodies move,
+  so the bucket and tray come home empty and `mass_totals()` still balances.
+  Measured error after a reset: 4e-9 kg.
+* **The jump home is never read as a cut.** The bucket's and blade's
+  cutting-edge histories are dropped and the pending soil contact is cleared,
+  so the next tick does not see a metre-long sweep through the bank and commit
+  it. `reset_smoke` asserts the excavated total does not move afterwards.
+
+**The ground is left exactly as dug.** A reset returns the machines, not the
+terrain; it is not an undo.
+
+The snapshot is taken at startup and then re-taken once the scene has settled,
+about 1.5 s in, because the crate drops onto the ground and the tray takes up
+on its hinge. Without that, `F8` restored a pre-settle pose that immediately
+sagged 0.15 m. A body that has already moved more than a metre by then was
+moved by the player, so its spawn pose stays the thing to restore.
+
 ## Assumptions, and what is not measured
 
 These numbers are engineering choices, not values the models supply.

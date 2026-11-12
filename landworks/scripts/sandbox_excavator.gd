@@ -11,8 +11,15 @@ var access_test := false
 var test_clock := 0.0
 var slew_target_rad := 0.0
 var total_slew_command_deg := 0.0
-var attached_load: RigidBody3D
-var load_hook_joint: PinJoint3D
+const COUPLER = preload("res://landworks/scripts/coupler.gd")
+
+var strap: Node3D
+# Read-through views of the strap's real constraint, so callers and tests see
+# the live joint rather than a cached copy that could disagree with it.
+var load_hook_joint: PinJoint3D:
+    get: return strap.joint if strap != null else null
+var attached_load: RigidBody3D:
+    get: return strap.partner if strap != null else null
 var cab_commands: Dictionary = {}
 var hydraulics_enabled := true
 var blade_cutting_edge_y := 0.0
@@ -58,36 +65,34 @@ func _control_aux(_delta: float) -> void:
     blade_cutting_edge_y = (dozer_blade.to_global(Vector3(0,-0.23,-0.90)).y
         if is_instance_valid(dozer_blade) else 0.0)
 
-func toggle_hook(candidates: Array[RigidBody3D]) -> String:
-    # Actual Jolt pin constraint, not a scripted lift or teleport. A heavy
-    # object may remain grounded while the machine pushes/pulls against it.
-    if is_instance_valid(load_hook_joint):
-        load_hook_joint.queue_free()
-        load_hook_joint = null
-        attached_load = null
-        return "Hook released"
-    var hook_world: Vector3 = bucket.to_global(BUCKET_TIP)
-    var nearest: RigidBody3D
-    var nearest_distance := 1.6
+func hook_point() -> Vector3:
+    return bucket.to_global(BUCKET_TIP)
+
+# Called every tick with the loose loads. The strap takes hold on its own once
+# the tooth is in the capture zone and nearly at rest against the load.
+func update_strap(candidates: Array) -> void:
+    if strap == null:
+        return
+    var targets: Array = []
     for body in candidates:
         if not is_instance_valid(body) or body == undercarriage or body == upper:
             continue
-        var distance := hook_world.distance_to(body.global_position)
-        if distance < nearest_distance:
-            nearest = body
-            nearest_distance = distance
-    if nearest == null:
-        return "No loose load within 1.6 m of the bucket"
-    var joint := PinJoint3D.new()
-    joint.name = "SandboxPhysicalLoadHook"
-    add_child(joint)
-    joint.global_position = hook_world
-    joint.node_a = joint.get_path_to(bucket)
-    joint.node_b = joint.get_path_to(nearest)
-    joint.exclude_nodes_from_collision = true
-    load_hook_joint = joint
-    attached_load = nearest
-    return "Hooked %s: lifting torque still limits movement" % nearest.name
+        targets.append({"body":body,"point":body.global_position})
+    strap.update_capture(hook_point(),bucket,targets)
+
+func toggle_hook(candidates: Array[RigidBody3D]) -> String:
+    # Actual Jolt pin constraint, not a scripted lift or teleport. A heavy
+    # object may remain grounded while the machine pushes/pulls against it.
+    # The button is primarily the release; pressed with nothing held it
+    # re-arms and tries immediately, so an operator can insist rather than
+    # wait for the automatic capture.
+    if strap.is_coupled():
+        return "Strap released: %s" % strap.release()
+    strap.armed = true
+    update_strap(candidates)
+    if strap.is_coupled():
+        return "Hooked %s: lifting torque still limits movement" % strap.partner.name
+    return "No loose load within %.2f m of the bucket" % strap.capture_radius
 
 
 func _ready() -> void:
@@ -102,6 +107,13 @@ func _ready() -> void:
     _build_machine()
     target_angles["blade"] = 0.0
     target_angles["offset"] = 0.0
+    # Lifting strap: forgiving to line up with, released on command.
+    strap = COUPLER.new()
+    strap.name = "BucketLiftingStrap"
+    strap.capture_radius = 0.95
+    strap.capture_speed = 2.2
+    strap.draw_strap = true
+    add_child(strap)
     # The older laboratory proxy reached down from a roof-height boom pin.
     # With the real sandbox pin lower, keep ground contact at the visible
     # bucket lip instead of retaining a hidden 1.2m-wide pushing block.
