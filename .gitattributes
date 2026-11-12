@@ -1,2 +1,12 @@
+# Normalise text to LF in the repository; Windows scripts keep CRLF on checkout.
+* text=auto eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Large binary assets via Git LFS
 *.glb filter=lfs diff=lfs merge=lfs -text
 *.blend filter=lfs diff=lfs merge=lfs -text
+*.png binary
+*.jpg binary
+*.exe binary
