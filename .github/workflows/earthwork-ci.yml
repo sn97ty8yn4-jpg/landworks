@@ -12,7 +12,7 @@ permissions:
 jobs:
   earthworks:
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 10
     steps:
       - name: Checkout project
         uses: actions/checkout@v4
@@ -53,6 +53,16 @@ jobs:
           grep 'UNPOWERED_SOIL PASS' ci-earthworks/unpowered.log
           timeout 65s godot --headless --path . --script res://landworks/scripts/detailed_cab_smoke.gd 2>&1 | tee ci-earthworks/cab.log
           grep 'DETAILED_CAB PASS' ci-earthworks/cab.log
+      - name: Test two-state slope stability
+        shell: bash
+        run: |
+          timeout 65s godot --headless --path . --script res://landworks/scripts/slope_stability_smoke.gd 2>&1 | tee ci-earthworks/slope.log
+          grep 'SLOPE_STABILITY PASS' ci-earthworks/slope.log
+      - name: Test playable dig regression
+        shell: bash
+        run: |
+          timeout 65s godot --headless --path . --script res://landworks/scripts/playable_dig_regression.gd 2>&1 | tee ci-earthworks/playable_dig.log
+          grep 'PLAYABLE_DIG PASS' ci-earthworks/playable_dig.log
       - name: Test legacy particle conservation
         shell: bash
         run: |
