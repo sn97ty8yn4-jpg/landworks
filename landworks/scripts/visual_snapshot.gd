@@ -48,10 +48,25 @@ func _capture(sandbox: Node3D) -> void:
             return
         print("RENDERED_FRAME_OK ",target," ",shot.get_width(),"x",shot.get_height())
     sandbox._select_machine(1)
-    sandbox.machine_visuals.cab.set_seated(true)
+    # The operator station moved to the rigged model art when the excavator
+    # stopped being dressed by the procedural visuals, and this script kept
+    # calling the old owner. Ask whoever actually built a cab, and refuse to
+    # continue if nobody did: skipping quietly would drop both cab frames
+    # while the RENDERED_FRAME_OK gate above still reported success.
+    var cab: Node3D = null
+    for owner in [sandbox.rig_visuals, sandbox.machine_visuals]:
+        if owner != null and owner.get("cab") != null:
+            cab = owner.cab
+            break
+    if cab == null:
+        push_error("No operator station to photograph — neither the rigged "
+            + "model art nor the procedural visuals built a cab")
+        quit(4)
+        return
+    cab.set_seated(true)
     for look_down in [false,true]:
-        sandbox.machine_visuals.cab.pitch = -45.0 if look_down else -15.0
-        sandbox.machine_visuals.cab.look(0,0)
+        cab.pitch = -45.0 if look_down else -15.0
+        cab.look(0,0)
         for frame in range(8): await process_frame
         await RenderingServer.frame_post_draw
         var name := "landworks_cab_controls.png" if look_down else "landworks_cab.png"

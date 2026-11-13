@@ -51,6 +51,14 @@ var max_tractor_travel := 0.0
 var max_crawler_travel := 0.0
 var max_prop_travel := 0.0
 var max_boom_change := 0.0
+# Boom movement restricted to the window in which the programme actually
+# commands the boom. The unrestricted figure above counts any movement at all,
+# and a run whose boom never responded to a command still reported 4.2 deg of
+# it, earned entirely by the chassis being shoved while crawling after the
+# commands had stopped. That passed a gate meant to prove the boom actuates.
+# BOOM_COMMAND_WINDOW_S must stay in step with sandbox_excavator's programme.
+const BOOM_COMMAND_WINDOW_S := 10.5
+var max_boom_change_commanded := 0.0
 var max_hitch_error := 0.0
 var max_tilt := 0.0
 var peak_pressure := 0.0
@@ -434,8 +442,10 @@ func _physics_process(delta: float) -> void:
     max_tractor_travel = maxf(max_tractor_travel, Vector2(delta_tractor.x, delta_tractor.z).length())
     max_crawler_travel = maxf(max_crawler_travel, Vector2(delta_excavator.x, delta_excavator.z).length())
     max_prop_travel = maxf(max_prop_travel, Vector2(delta_crate.x, delta_crate.z).length())
-    max_boom_change = maxf(max_boom_change,
-        absf(rad_to_deg(digger._joint_angle("boom") - initial_boom)))
+    var boom_change: float = absf(rad_to_deg(digger._joint_angle("boom") - initial_boom))
+    max_boom_change = maxf(max_boom_change, boom_change)
+    if smoke_time <= BOOM_COMMAND_WINDOW_S:
+        max_boom_change_commanded = maxf(max_boom_change_commanded, boom_change)
     var hitch_gap := tractor.to_global(TRACTOR_HITCH_LOCAL).distance_to(
         trailer.to_global(trailer.HITCH_POINT))
     # Only a coupled hitch has an error to report; an uncoupled trailer is
@@ -623,11 +633,13 @@ func _finish_smoke() -> void:
         get_tree().quit(5)
         return
     f.store_csv_line(PackedStringArray(["tractor_travel_m", "excavator_travel_m",
-        "crate_travel_m", "boom_change_deg", "max_hitch_error_m",
+        "crate_travel_m", "boom_change_deg", "boom_commanded_deg",
+        "max_hitch_error_m",
         "max_chassis_tilt_deg", "peak_hydraulic_pressure_mpa", "test_duration_s"]))
     f.store_csv_line(PackedStringArray([
         "%.3f" % max_tractor_travel, "%.3f" % max_crawler_travel,
         "%.3f" % max_prop_travel, "%.3f" % max_boom_change,
+        "%.3f" % max_boom_change_commanded,
         "%.3f" % max_hitch_error, "%.3f" % max_tilt,
         "%.3f" % peak_pressure, "%.3f" % smoke_time
     ]))

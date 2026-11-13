@@ -64,7 +64,13 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import struct
-          for name in ['landworks_tractor.png','landworks_excavator.png']:
+          # The cab frames are listed because they silently stopped being
+          # written when the operator station moved to the rigged model art,
+          # and only the SCRIPT ERROR grep noticed. A missing frame must fail
+          # here too, on its own.
+          for name in ['landworks_tractor.png','landworks_excavator.png',
+                       'landworks_tractor_detail.png','landworks_excavator_detail.png',
+                       'landworks_cab.png','landworks_cab_controls.png']:
               f=Path('ci-visuals')/name
               b=f.read_bytes()
               assert b[:8] == b'\x89PNG\r\n\x1a\n'

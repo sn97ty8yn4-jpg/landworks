@@ -119,6 +119,13 @@ func _ready() -> void:
     strap.capture_radius = 0.95
     strap.capture_speed = 2.2
     strap.draw_strap = true
+    # The sandbox spawns a test crate within reach of the parked bucket, and
+    # an armed strap hooked it on the first tick. Nothing then moved: the pin
+    # tied the bucket to a load sitting on the ground, so the boom held still
+    # under full flow and full torque. The hook must be brought to a load, so
+    # it stays disarmed until the bucket has been clear of one. The strap key
+    # still arms it on demand for an operator who wants to insist.
+    strap.start_disarmed = true
     add_child(strap)
     # The older laboratory proxy reached down from a roof-height boom pin.
     # With the real sandbox pin lower, keep ground contact at the visible

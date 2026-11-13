@@ -173,6 +173,58 @@ one from the live scene rather than from an internal number.
   coupled. The pin now lands on the ball, and the tray no longer collides
   with the tractor. The resting ball-to-ring gap is asserted under 80 mm.
 
+## The strap that pinned the boom
+
+Found afterwards, by pushing the commit to CI and reading what went red.
+
+The lifting strap armed itself on the first tick and took hold of whatever was
+already inside its capture radius. The sandbox spawns a 1500 kg test crate
+within reach of the parked bucket, so the strap hooked it before the player
+touched a control. The crate was resting on the ground, so the pin tied the
+bucket to the ground: the boom then held perfectly still, under a full 0.80
+rad/s command and the full 75 kN·m torque cap, at 2.35 MPa. Measured angular
+velocity was 0.00001 rad/s for ten seconds while the target swept 0.24 to 0.64
+and back. Nothing was under-powered; the boom was anchored.
+
+Where this bites, measured rather than assumed: in the sandbox smoke
+configuration the crate stands within reach of the tooth, and the strap took
+it. In the playable scene the nearest load sits 7.5 m away, so no grab happens
+at spawn there, and this is **not** an explanation for the excavator having
+felt awkward — that was the flow mis-rating and the boom damping, both already
+fixed. What the fault does show is that the rule was wrong: any load standing
+in the zone was taken without being asked.
+
+Coming to a load and having it take hold is the wanted behaviour, so the strap
+now stays
+**disarmed until the bucket has been clear of a load** (`start_disarmed`), the
+same rule that already applied after a release. The tow hitch keeps the old
+behaviour deliberately: its trailer spawns parked on the ball and should be
+coupled from the first tick. The strap key still arms on demand, so an
+operator who wants to insist never has to move away first.
+
+The cost: a load standing beside the bucket at the start is not picked up
+automatically until the bucket has been 1.6 m clear of it once, or the strap
+key is pressed.
+
+### The gate that agreed with it
+
+`validate_sandbox.py` required `boom_change_deg >= 4.0` to prove "the physics
+boom moved", and the pinned run reported **4.221** — earned entirely after the
+boom commands had finished, by the chassis being shoved while crawling. The
+boom's own answer to a command was 0.45 degrees. A second gate was fooled the
+same way: the crate was recorded travelling 2.568 m, but it was being *towed
+by the strap*, not pushed by the toe. Honest figures are now 21.440 degrees of
+commanded boom movement and 0.890 m of pushing.
+
+The summary therefore carries a new `boom_commanded_deg` column, measured only
+inside the window in which the programme actually commands the boom, and gated
+at 15 degrees of its roughly 24 degree sweep. Both observed failure modes sat
+under 5 degrees. `machine_feel_smoke` places a load on the hook *before the
+first physics tick* and asserts the strap refuses it; that check fails on the
+old code and passes on the new, and it has to inject its own load because this
+scene's props sit 7.5 m away, which is why the existing boom checks never
+caught the fault.
+
 ## Assumptions, and what is not measured
 
 These numbers are engineering choices, not values the models supply.
@@ -222,6 +274,15 @@ actually there now, and `rigged_model_smoke` was added on top.
   tooth 0.5 m below the bucket pin the bucket started buried 0.7 m in the face
   and stalled, cutting 1.5 L against a 5 L floor. The pad is now seated so the
   lip begins 50 mm clear of the face; the commanded motion then cuts 0.292 m3.
+* **`visual_snapshot`** still asked the procedural visuals for the operator
+  station. The excavator stopped being dressed by them when the model was
+  bound, so `machine_visuals.cab` was null and the two cab frames were never
+  written. The renderer exits 0 regardless, so only the step's `SCRIPT ERROR:`
+  grep failed the build — the frames had simply been missing from the CI
+  artifacts since the model went in. The visual workflow last passed at
+  `35f2fa2`, the commit before the integration. It now asks whichever owner built a cab
+  and refuses to continue if neither did, and the workflow asserts all six
+  frames rather than two, so a missing frame fails on its own.
 
 ## Known limitations
 

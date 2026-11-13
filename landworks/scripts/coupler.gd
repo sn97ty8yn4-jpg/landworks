@@ -29,12 +29,23 @@ var joint: PinJoint3D
 var partner: RigidBody3D
 var carrier: RigidBody3D
 var armed := true
+# A coupling that starts armed takes hold of whatever is already inside its
+# radius on the very first tick. That is right for the tow hitch, whose
+# trailer spawns parked on the ball. It is wrong for the lifting strap: it
+# pinned the bucket to a block merely standing beside it before the player
+# touched a control, and because the block was resting on the ground the pin
+# held the boom so hard it could not move at all under full command.
+var start_disarmed := false
 var attach_count := 0
 var release_count := 0
 var last_gap := INF
 var strap: MeshInstance3D
 var anchor_point := Vector3.ZERO
 var partner_point := Vector3.ZERO
+
+func _ready() -> void:
+	if start_disarmed:
+		armed = false
 
 func is_coupled() -> bool:
 	return is_instance_valid(joint) and is_instance_valid(partner)
@@ -108,7 +119,10 @@ func release() -> String:
 # True when a capture would happen right now if the pair were armed: used for
 # the on-screen prompt, so the hint matches the rule rather than guessing.
 func in_zone() -> bool:
-	return last_gap <= capture_radius
+	# Being disarmed counts: a pair that has just been dropped, or one that has
+	# never been clear, is inside the radius and still will not couple, and
+	# telling the operator to hold still would be a lie.
+	return armed and last_gap <= capture_radius
 
 func _update_strap() -> void:
 	if not draw_strap:

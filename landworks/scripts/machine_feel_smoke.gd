@@ -15,9 +15,44 @@ func _initialize() -> void:
 func _run() -> void:
 	var world = WORLD.instantiate()
 	root.add_child(world)
+	# 0. The lifting strap must not take hold of a load that is already
+	# standing within reach when the scene opens. It did, and because such a
+	# load rests on the ground the pin tied the bucket to the ground: the boom
+	# then held perfectly still under full flow and full torque, which is what
+	# the sandbox boom gate failed on.
+	# Coming to a load and having it take hold is the wanted behaviour, so the
+	# load must be in place before the first physics tick for this to mean
+	# anything. It goes in here rather than relying on the scene's own props,
+	# which sit 7.5 m away in this scene — which is why the boom checks below
+	# never caught the fault.
+	var squatter := RigidBody3D.new()
+	squatter.name = "StrapSquatter_80kg"
+	squatter.mass = 80.0
+	squatter.freeze = true
+	var squatter_shape := CollisionShape3D.new()
+	var squatter_box := BoxShape3D.new()
+	squatter_box.size = Vector3(0.3, 0.3, 0.3)
+	squatter_shape.shape = squatter_box
+	squatter.add_child(squatter_shape)
+	world.add_child(squatter)
+	squatter.global_position = world.digger.hook_point()
+	world.props.append(squatter)
 	await process_frame
 	var digger = world.digger
 	var art = world.rig_visuals
+	for _n in range(180):
+		await physics_frame
+	print("STRAP_AT_REST coupled=", digger.strap.is_coupled(),
+		" armed=", digger.strap.armed,
+		" nearest_m=", String.num(digger.strap.last_gap, 3))
+	check(digger.strap.last_gap <= digger.strap.capture_radius,
+		"Test fault: the squatting load never entered the capture zone")
+	check(not digger.strap.is_coupled(),
+		"The strap hooked a load standing in the zone without being asked")
+	world.props.erase(squatter)
+	squatter.queue_free()
+	for _n in range(10):
+		await physics_frame
 
 	# 1. Track shoes must lie square across the track, not edge-on. The plate's
 	# 450 mm width is the mesh's longest axis; find it, then check where the
@@ -154,6 +189,30 @@ func _run() -> void:
 	check(absf(inside.x) < 0.75 and inside.y > -0.10 and inside.y < 1.20
 			and inside.z < 0.2 and inside.z > -2.4,
 		"A block dropped into the tray did not stay in it")
+	# 7. Starting disarmed must not cost the operator the strap. With a load
+	# actually at the hook, the strap key has to take hold, and release it.
+	var hook_load := RigidBody3D.new()
+	hook_load.name = "StrapProbe_60kg"
+	hook_load.mass = 60.0
+	hook_load.freeze = true
+	var hook_shape := CollisionShape3D.new()
+	var hook_box := BoxShape3D.new()
+	hook_box.size = Vector3(0.3, 0.3, 0.3)
+	hook_shape.shape = hook_box
+	hook_load.add_child(hook_shape)
+	world.add_child(hook_load)
+	hook_load.global_position = digger.hook_point()
+	var loads: Array[RigidBody3D] = []
+	loads.append(hook_load)
+	await physics_frame
+	var took_hold: String = digger.toggle_hook(loads)
+	print("STRAP_ON_DEMAND ", took_hold, " coupled=", digger.strap.is_coupled())
+	check(digger.strap.is_coupled(),
+		"The strap key would not hook a load sitting on the hook: " + took_hold)
+	var let_go: String = digger.toggle_hook(loads)
+	check(not digger.strap.is_coupled(),
+		"The strap key would not release the load it was holding: " + let_go)
+
 	for failure in failures: push_error(failure)
 	print("MACHINE_FEEL ", "PASS" if failures.is_empty() else "FAIL")
 	quit(0 if failures.is_empty() else 1)
