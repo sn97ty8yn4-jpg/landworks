@@ -132,6 +132,47 @@ on its hinge. Without that, `F8` restored a pre-settle pose that immediately
 sagged 0.15 m. A body that has already moved more than a metre by then was
 moved by the player, so its spawn pose stays the thing to restore.
 
+## Faults found by playing it, and their causes
+
+Six faults came back from actual play. `machine_feel_smoke` now measures each
+one from the live scene rather than from an internal number.
+
+* **Tracks looked far too narrow.** The shoe plate's 450 mm width runs along
+  the mesh's own Y, and the instance transforms applied neither that nor the
+  model-to-game quarter turn, so every plate sat edge-on. Separately, the
+  MultiMesh silently refused transform writes (a direct `set_instance_transform`
+  did not read back), which left all 78 plates at identity. Replaced with one
+  mesh node per shoe. Plates now read 1.00 square across the track.
+* **Cylinders projected the wrong way.** Barrels are modelled extending +X
+  from their pin, rods extending **-X**; both were aimed as +X, so every rod
+  pointed out of the back of its barrel. The running direction is now read
+  from each mesh's own bounding box.
+* **The boom bounced with no input, and stalled short of full lift.** One
+  cause: the damping term was taken from the bodies' angular velocity about
+  the pin, whose sign does not follow the angle the error is measured in, so
+  it *added* to the error. Damping is now the rate of change of that same
+  angle. Full lift went from never arriving in 7.5 s to 2.2 s, and the hold
+  shows zero direction reversals. What remains is a 1.5 degree one-way creep
+  to target, which is settling, not a bounce.
+* **The controls felt unresponsive.** `NOMINAL_RADS` still described the old
+  joint ceilings, so one lever at full command over-requested pump flow and
+  the allocator scaled it back; three together asked 274 L/min against 144.
+  The ratings now match the ceilings they serve, and net power to oil went
+  36 to 45 kW. All axes always ran together; they were simply all being cut.
+* **The trailer would not fill.** The tray was a single solid box, which
+  cannot be loaded at all. It is now a floor and four sides, and the soil
+  container sits inside it.
+* **The tipper dropped the front instead of lifting it.** `tip_angle_rad()`
+  had its operands reversed and returned the negative of the real angle, so a
+  positive command drove the front down while the number read positive, and
+  the test agreed with it. The angle, the pin's limit range and the motor sign
+  are all corrected, and the check now measures the tray front's world height.
+* **The tractor stuck while hitched.** The hitch pin was placed midway
+  between the tow ball and the ring, baking a standing quarter-metre offset
+  into the constraint that pulled the tractor back for as long as it was
+  coupled. The pin now lands on the ball, and the tray no longer collides
+  with the tractor. The resting ball-to-ring gap is asserted under 80 mm.
+
 ## Assumptions, and what is not measured
 
 These numbers are engineering choices, not values the models supply.

@@ -200,9 +200,10 @@ func _build_machines() -> void:
     hitch_coupler.name = "Live_Tractor_Trailer_Hitch"
     hitch_coupler.capture_radius = 0.45
     hitch_coupler.capture_speed = 1.6
-    # Split the difference so neither the tractor nor the drawbar is yanked
-    # the whole way when they capture off-centre.
-    hitch_coupler.engage_mix = 0.5
+    # Pin on the tow ball itself. Splitting the difference baked a permanent
+    # quarter-metre offset into the constraint, so the drawbar hung off the
+    # ball and dragged the tractor back: it felt like the tractor was stuck.
+    hitch_coupler.engage_mix = 0.0
     add_child(hitch_coupler)
     _update_hitch()
     digger = E.new()
@@ -239,8 +240,13 @@ func _build_earthworks() -> void:
     bucket_empty_mass = digger.bucket.mass
     # The tray catches what the bucket dumps into it instead of the ground.
     if is_instance_valid(trailer.tray):
+        # Sits inside the open tray, above its floor and within its sides.
         trailer_bin = earth.register_container(trailer.tray,
-            Vector3(1.25,0.70,2.10),Vector3(0,0.35,-1.09))
+            Vector3(1.24,0.42,2.08),Vector3(0,0.25,-1.093))
+        # The tray and the tractor are one coupled unit; letting the tray
+        # grind on the tractor's rear is another way the pair locks up.
+        trailer.tray.add_collision_exception_with(tractor)
+        trailer.tray.add_collision_exception_with(trailer)
 
 func _make_prop(name: String, kg: float, location: Vector3,
         radius: float, cylinder: bool, tint: Color) -> void:
@@ -347,6 +353,9 @@ func _build_ui() -> void:
     instructions.add_theme_color_override("font_color",Color("#f9ecd5"))
     instructions.text = "LANDWORKS  •  CONTROLS\n" +         "Tab / Triangle — change machine     Z/C — orbit camera\n" +         "Tractor: W/S travel, A/D steer; PS R2/L2 travel + left stick\n" +         "Excavator: W/S tracks, A/D differential pivot\n" +         "I/K boom  |  O/L stick  |  P/; bucket  |  Q/E slew\n" +         "G / Square — bucket hook     R — dump soil     F12 — old yard\n" +         "Mouse wheel — zoom     F2 — inspection view     F1 — close help"
     instructions.text += "\nT/Y — dozer blade   [ / ] — boom offset   N/B — tip trailer"
+    instructions.text += "\nExcavator: keypad 8/2 boom, 4/6 bucket, 7/9 boom offset"
+    instructions.text += "\n           W/X arm   A/D slew   S stop tracks"
+    instructions.text += "\n           arrows: left/right track (Shift reverses), up/down blade"
     instructions.text += "\nF8 — reset all machines to start (the ground stays as dug)"
     instructions.text += "\nH — drop the hitch; reverse the ball under the ring to re-couple"
     instructions.text += "\nG — release the strap; it takes hold on its own near a load"
@@ -391,6 +400,7 @@ func _physics_process(delta: float) -> void:
     tractor.ground_mu_override = 0.53 if tractor.global_position.x > CLAY_START_X else T.GROUND_MU
     _update_hitch()
     digger.update_strap(props)
+    digger.arrows_look = rig_visuals != null and rig_visuals.cab != null and rig_visuals.cab.seated
     if settle_tick >= 0:
         settle_tick += 1
         if settle_tick >= 180:
@@ -819,6 +829,11 @@ func reset_machines() -> String:
     previous_blade_edge_valid = false
     previous_blade_edge = Vector3.ZERO
     pending_soil_contact.clear()
+    # Releasing leaves the coupling disarmed until the pair separates, which
+    # is right for a dropped trailer but wrong here: the restore puts the ring
+    # straight back on the ball, so without re-arming it could never couple.
+    if hitch_coupler != null:
+        hitch_coupler.armed = true
     _update_hitch()
     reset_count += 1
     return "Machines reset to start condition (the ground stays as you dug it)"

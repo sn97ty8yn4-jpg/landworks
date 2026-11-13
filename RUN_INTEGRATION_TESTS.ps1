@@ -10,6 +10,7 @@ $cases = [ordered]@{
     rigged_model_smoke = 'RIGGED_MODEL PASS'
     coupling_smoke = 'COUPLING PASS'
     reset_smoke = 'RESET PASS'
+    machine_feel_smoke = 'MACHINE_FEEL PASS'
     material_mechanics_smoke = 'MATERIAL_MECHANICS PASS'
     slope_stability_smoke = 'SLOPE_STABILITY PASS'
     playable_dig_regression = 'PLAYABLE_DIG PASS'

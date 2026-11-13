@@ -90,7 +90,9 @@ func _make_hinge(id: String, parent: PhysicsBody3D, child: PhysicsBody3D,
     joint.set_flag(HingeJoint3D.FLAG_ENABLE_MOTOR, true)
     joint.set_param(HingeJoint3D.PARAM_MOTOR_MAX_IMPULSE, max_impulse)
     hinges[id] = {"joint": joint, "a": parent, "b": child, "axis": axis,
-        "max_speed": 0.55 if id == "boom" else 0.72}
+        # Raised with the widened rig limits: the boom now sweeps 123 degrees
+        # and the bucket 145, so the old ceilings made the controls crawl.
+        "max_speed": 0.80 if id == "boom" else 1.05}
 
 func _build_machine() -> void:
     undercarriage = RigidBody3D.new()

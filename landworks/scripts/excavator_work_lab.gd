@@ -366,10 +366,40 @@ func _desired_joint_velocity(id: String) -> float:
     var a: RigidBody3D = h["a"]
     var b: RigidBody3D = h["b"]
     var axis_world: Vector3 = a.global_transform.basis * Vector3.RIGHT
-    var error := wrapf(float(target_angles[id]) - _joint_angle(id), -PI, PI)
-    var rel_vel: float = (b.angular_velocity - a.angular_velocity).dot(axis_world)
-    return clampf(3.4 * error - 0.65 * rel_vel,
+    var measured := _joint_angle(id)
+    var error := wrapf(float(target_angles[id]) - measured, -PI, PI)
+    # Damp on the rate of change of the SAME angle the error is measured in.
+    # Taking it from the bodies' angular velocity about the pin axis gave a
+    # term whose sign did not follow this angle's convention, so it added to
+    # the error instead of opposing it: the boom both hunted at rest and
+    # stalled short of its target with the motor commanding the wrong way.
+    var rate := (measured - float(h.get("last_angle", measured))) * float(
+        Engine.physics_ticks_per_second)
+    h["last_angle"] = measured
+    # Hold still once the link is there. A velocity-mode motor commanded to
+    # zero brakes the joint, which is what holding a boom out needs; without
+    # the deadband the longer, heavier arm hunts about its target and the
+    # boom visibly bounces with no operator input.
+    if absf(error) < 0.006 and absf(rate) < 0.10:
+        return 0.0
+    return clampf(3.4 * error - 1.10 * rate,
         -float(h["max_speed"]), float(h["max_speed"]))
+
+# Static gravity moment about a pin, taken from the bodies' real masses and
+# their actual horizontal lever arms. This replaced three constants tuned to
+# the pre-remap arm, which under-feed the longer boom and make the hydraulic
+# allocator cut flow against a load it has underestimated.
+func _gravity_moment_nm(pin: Vector3, bodies: Array) -> float:
+    var total := 0.0
+    for body in bodies:
+        if not is_instance_valid(body):
+            continue
+        var centre: Vector3 = body.global_position
+        var state := PhysicsServer3D.body_get_direct_state(body.get_rid())
+        if state != null:
+            centre = state.center_of_mass
+        total += body.mass * 9.81 * Vector2(centre.x - pin.x, centre.z - pin.z).length()
+    return total
 
 func _drive_hydraulics(_delta: float) -> void:
     var speed_requests := {}
@@ -389,9 +419,11 @@ func _drive_hydraulics(_delta: float) -> void:
     var suspended_kg := 0.0 if case_name in GROUND_HANDLING_CASES else initial_payload_mass
     var payload_nm := suspended_kg * 9.81 * projected_reach
     var estimated := {
-        "boom": 24000.0 + payload_nm,
-        "stick": 14000.0 + suspended_kg * 9.81 * 1.1,
-        "bucket": 6200.0 + suspended_kg * 9.81 * 0.3
+        "boom": _gravity_moment_nm(boom.global_position, [boom, stick, bucket]) + payload_nm,
+        "stick": _gravity_moment_nm(stick.global_position, [stick, bucket])
+            + suspended_kg * 9.81 * 1.1,
+        "bucket": _gravity_moment_nm(bucket.global_position, [bucket])
+            + suspended_kg * 9.81 * 0.3
     }
     hydraulic_state = HYD.allocate(speed_requests, limit_nm, estimated)
     minimum_flow_scale = minf(minimum_flow_scale, float(hydraulic_state["flow_scale"]))

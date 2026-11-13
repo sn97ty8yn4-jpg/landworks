@@ -58,6 +58,11 @@ jobs:
         run: |
           timeout 85s godot --headless --path . --script res://landworks/scripts/rigged_model_smoke.gd 2>&1 | tee ci-earthworks/rigged.log
           grep 'RIGGED_MODEL PASS' ci-earthworks/rigged.log
+      - name: Test machine feel regressions
+        shell: bash
+        run: |
+          timeout 110s godot --headless --path . --script res://landworks/scripts/machine_feel_smoke.gd 2>&1 | tee ci-earthworks/feel.log
+          grep 'MACHINE_FEEL PASS' ci-earthworks/feel.log
       - name: Test the global machine reset
         shell: bash
         run: |

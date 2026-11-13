@@ -10,7 +10,24 @@ import argparse
 import csv
 import math
 from pathlib import Path
+import re
 import sys
+
+
+def engine_to_oil_kw() -> float:
+    """Read the hydraulic model's own power ceiling.
+
+    Hardcoding it meant this gate silently described an older machine: when
+    ENGINE_HYDRAULIC_KW was raised the limit here still said 36, and a run
+    that respected the model by construction was reported as exceeding it.
+    """
+    source = Path(__file__).resolve().parents[1] / "landworks/scripts/hydraulic_model.gd"
+    try:
+        found = re.search(r"ENGINE_HYDRAULIC_KW\s*:=\s*([0-9.]+)", source.read_text())
+    except OSError:
+        return 36.0
+    return float(found.group(1)) if found else 36.0
+
 
 TRACTOR = ("flat_empty", "flat_400", "hill_400", "hill_800")
 EXCAVATOR = ("lift_250", "lift_500", "lift_1000", "lift_pivot_500",
@@ -54,7 +71,7 @@ def check_case(case: str, r: dict[str, float]) -> list[str]:
     if case.startswith(("lift_", "drag_", "push_", "roll_")):
         if float(r.get("peak_hydraulic_pressure_mpa", 0.0)) > 29.41:
             problems.append("hydraulic pressure exceeds main relief setting")
-        if float(r.get("peak_hydraulic_power_kw", 0.0)) > 36.05:
+        if float(r.get("peak_hydraulic_power_kw", 0.0)) > engine_to_oil_kw() + 0.05:
             problems.append("hydraulic demand exceeds estimated engine-to-oil power")
         if not 0.0 < float(r.get("minimum_flow_scale", 1.0)) <= 1.0001:
             problems.append("invalid hydraulic flow allocation scale")

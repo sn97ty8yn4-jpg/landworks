@@ -5,7 +5,12 @@ const S = preload("res://landworks/scripts/ground_response.gd")
 
 func _initialize() -> void:
     var peak := {"boom": 75000.0, "stick": 45000.0, "bucket": 20000.0}
-    var busy := H.allocate({"boom": 0.55, "stick": 0.72, "bucket": 0.72},
+    # "Busy" means every service asking for its own rated speed at once. Take
+    # those from the model rather than copying numbers, which is how this test
+    # came to request less than full flow once the ratings were raised.
+    var busy := H.allocate({"boom": float(H.NOMINAL_RADS["boom"]),
+            "stick": float(H.NOMINAL_RADS["stick"]),
+            "bucket": float(H.NOMINAL_RADS["bucket"])},
         peak, {"boom": 75000.0, "stick": 45000.0, "bucket": 20000.0})
     var alone := H.allocate({"boom": 0.10, "stick": 0.0, "bucket": 0.0},
         peak, {"boom": 18000.0, "stick": 0.0, "bucket": 0.0})

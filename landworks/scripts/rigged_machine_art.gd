@@ -28,8 +28,10 @@ var trailer_root: Node3D
 var bound_parts := 0
 var missing_parts: Array[String] = []
 var cylinders: Array[Dictionary] = []
-var track_multimeshes: Array[MultiMesh] = []
+var track_shoes: Array[Array] = []
 var track_phase := [0.0, 0.0]
+var shoe_basis := Basis.IDENTITY
+var track_updates := 0
 var bucket_tip: Node3D
 var tray_art: Node3D
 var blade_art: Node3D
@@ -82,20 +84,31 @@ func _hide_primitive_art(body: Node) -> void:
 		if child is MeshInstance3D:
 			(child as MeshInstance3D).visible = false
 
+# Which way a part's barrel or rod actually runs from its own pin. Barrels are
+# modelled extending +X from the pin, rods extending -X, so aiming both the
+# same way leaves the rods projecting out of the back of their cylinders.
+# Read it from the mesh instead of assuming: the geometry is the authority.
+static func _axis_sign(node: Node3D) -> float:
+	if not (node is MeshInstance3D) or (node as MeshInstance3D).mesh == null:
+		return 1.0
+	var box: AABB = (node as MeshInstance3D).mesh.get_aabb()
+	return 1.0 if absf(box.end.x) >= absf(box.position.x) else -1.0
+
 func _register_cylinder(barrel: Node3D, barrel_pin: Node3D,
 		rod: Node3D, rod_pin: Node3D) -> void:
 	if barrel == null or rod == null or barrel_pin == null or rod_pin == null:
 		return
 	cylinders.append({"barrel": barrel, "barrel_pin": barrel_pin,
-		"rod": rod, "rod_pin": rod_pin})
+		"rod": rod, "rod_pin": rod_pin,
+		"barrel_sign": _axis_sign(barrel), "rod_sign": _axis_sign(rod)})
 
-# Points a part's own +X axis at a world target, keeping it upright.
-static func _aim(node: Node3D, target: Vector3) -> void:
+# Points the part's own running axis at a world target, keeping it upright.
+static func _aim(node: Node3D, target: Vector3, sign: float = 1.0) -> void:
 	var origin := node.global_position
 	var direction := target - origin
 	if direction.length_squared() < 1e-8:
 		return
-	var x := direction.normalized()
+	var x := direction.normalized() * sign
 	var reference := Vector3.UP if absf(x.dot(Vector3.UP)) < 0.98 else Vector3.RIGHT
 	var z := x.cross(reference).normalized()
 	var y := z.cross(x).normalized()
@@ -109,12 +122,32 @@ func _aim_cylinders() -> void:
 			continue
 		var rod_pin: Node3D = cylinder["rod_pin"]
 		var barrel_pin: Node3D = cylinder["barrel_pin"]
-		_aim(barrel, rod_pin.global_position)
-		_aim(rod, barrel_pin.global_position)
+		_aim(barrel, rod_pin.global_position, float(cylinder["barrel_sign"]))
+		_aim(rod, barrel_pin.global_position, float(cylinder["rod_sign"]))
 
 func _build_tracks(source: Node3D, body: Node3D) -> void:
 	var shoe := _find(source, "Track_L_Shoe_00")
 	var mesh: Mesh = (shoe as MeshInstance3D).mesh if shoe is MeshInstance3D else null
+	# Lay the shoe plate square across the track. Which of the mesh's own axes
+	# is the 450 mm width, which the 153 mm pitch and which the plate
+	# thickness is read from the mesh itself, because the importer may bake a
+	# node's rest rotation into the geometry. Without this the plate ends up
+	# edge-on and the tracks look far too narrow.
+	if mesh != null:
+		var box := mesh.get_aabb()
+		var sizes := [box.size.x, box.size.y, box.size.z]
+		var width_i: int = sizes.find(sizes.max())
+		var thin_i: int = sizes.find(sizes.min())
+		var pitch_i: int = 3 - width_i - thin_i
+		var columns := [Vector3.ZERO, Vector3.ZERO, Vector3.ZERO]
+		columns[width_i] = Vector3.RIGHT   # gauge: across the track
+		columns[pitch_i] = Vector3.BACK    # pitch: along the belt
+		columns[thin_i] = Vector3.UP       # plate thickness
+		var oriented := Basis(columns[0], columns[1], columns[2])
+		if oriented.determinant() < 0.0:
+			columns[thin_i] = Vector3.DOWN
+			oriented = Basis(columns[0], columns[1], columns[2])
+		shoe_basis = oriented
 	# The 78 individual shoes are replaced by two MultiMeshes: the same steel
 	# shoe drawn 39 times a side, circulating on the measured loop.
 	for n in range(SHOES_PER_SIDE):
@@ -126,17 +159,22 @@ func _build_tracks(source: Node3D, body: Node3D) -> void:
 	if mesh == null:
 		push_error("Landworks: rigged model has no track shoe mesh")
 		return
+	# Plain mesh nodes, one per shoe. A MultiMesh silently refused transform
+	# writes here (a direct set_instance_transform did not read back), which
+	# left every plate at identity and was the real reason the tracks looked
+	# narrow. 78 static meshes cost nothing and are what the model shipped.
 	for side in [-1.0, 1.0]:
-		var instance := MultiMeshInstance3D.new()
-		instance.name = "CirculatingTrackShoes_Left" if side < 0.0 else "CirculatingTrackShoes_Right"
-		var multi := MultiMesh.new()
-		multi.transform_format = MultiMesh.TRANSFORM_3D
-		multi.mesh = mesh
-		multi.instance_count = SHOES_PER_SIDE
-		instance.multimesh = multi
-		instance.custom_aabb = AABB(Vector3(-1.2, -0.05, -1.5), Vector3(2.4, 0.9, 3.0))
-		body.add_child(instance)
-		track_multimeshes.append(multi)
+		var belt := Node3D.new()
+		belt.name = "CirculatingTrackShoes_Left" if side < 0.0 else "CirculatingTrackShoes_Right"
+		body.add_child(belt)
+		var row: Array[MeshInstance3D] = []
+		for n in range(SHOES_PER_SIDE):
+			var plate := MeshInstance3D.new()
+			plate.name = "Shoe_%02d" % n
+			plate.mesh = mesh
+			belt.add_child(plate)
+			row.append(plate)
+		track_shoes.append(row)
 	_update_track_transforms()
 
 func _track_sample(distance: float, side: float) -> Transform3D:
@@ -164,14 +202,17 @@ func _track_sample(distance: float, side: float) -> Transform3D:
 		z = -TRACK_HALF_STRAIGHT - sin(t) * TRACK_RADIUS
 		y += cos(t) * TRACK_RADIUS
 		angle = -t
-	return Transform3D(Basis(Vector3.RIGHT, angle), Vector3(side * TRACK_GAUGE_HALF, y, z))
+	return Transform3D(Basis(Vector3.RIGHT, angle) * shoe_basis,
+		Vector3(side * TRACK_GAUGE_HALF, y, z))
 
 func _update_track_transforms() -> void:
-	for index in range(track_multimeshes.size()):
+	track_updates += 1
+	for index in range(track_shoes.size()):
 		var side := -1.0 if index == 0 else 1.0
-		for n in range(SHOES_PER_SIDE):
-			track_multimeshes[index].set_instance_transform(n,
-				_track_sample(float(n) * TRACK_LOOP / float(SHOES_PER_SIDE) + track_phase[index], side))
+		var row: Array[MeshInstance3D] = track_shoes[index]
+		for n in range(row.size()):
+			row[n].transform = _track_sample(
+				float(n) * TRACK_LOOP / float(SHOES_PER_SIDE) + track_phase[index], side)
 
 func attach_excavator(machine: Node3D) -> void:
 	excavator = machine
@@ -300,7 +341,7 @@ func advance_tracks(left_speed: float, right_speed: float, delta: float) -> void
 
 func _physics_process(delta: float) -> void:
 	_aim_cylinders()
-	if excavator == null or track_multimeshes.is_empty():
+	if excavator == null or track_shoes.is_empty():
 		return
 	if cab != null:
 		cab.commands = excavator.cab_commands

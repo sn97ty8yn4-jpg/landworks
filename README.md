@@ -17,7 +17,13 @@ the detailed GLB models. The engine runtime is local-only; install Godot
 
 Tab switches machines; W/S drive; A/D steer; Z/C orbit; mouse wheel zooms;
 F2 toggles inspection view; F1 displays the full controls. Excavator controls:
-I/K boom, O/L stick, P/semicolon bucket, Q/E slew, R dump and G load hook.
+Excavator, right keypad and left cluster, all axes usable together:
+keypad 8/2 boom, keypad 4/6 bucket curl/dump, keypad 7/9 boom offset,
+W/X arm out/in, A/D slew, S stop tracks. Arrow left/right are the two track
+levers (hold Shift for reverse) and arrow up/down work the dozer blade; while
+you are seated in the cab the arrows still steer your head instead.
+The original I/K, O/L, P/semicolon, Q/E and T/Y keys still work. R dumps and
+G releases the load strap.
 T/Y raise and lower the dozer blade, `[` and `]` swing the boom offset, and
 N/B tip and lower the trailer tray. H drops the trailer hitch: drive clear,
 reverse the ball back under the ring and it couples itself. The excavator's

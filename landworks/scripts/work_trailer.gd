@@ -89,14 +89,29 @@ func build_tray(container: Node) -> void:
 	tray.angular_damp = 0.20
 	container.add_child(tray)
 	tray.global_transform = Transform3D(global_transform.basis, to_global(TRAY_PIN))
-	var shape := BoxShape3D.new()
-	shape.size = TRAY_SIZE
-	var collision := CollisionShape3D.new()
-	collision.shape = shape
-	# The tray hangs forward of its rear hinge pin.
-	collision.position = Vector3(0, 0.22, -TRAY_SIZE.z * 0.5)
-	tray.add_child(collision)
-	M.block(tray, TRAY_SIZE, collision.position, Color("#1f7f82"))
+	# An open-topped body, not a solid block: a solid tray cannot be loaded,
+	# which is why blocks would not go in and spoil had nowhere to sit. Floor
+	# plus four sides, hung forward of the rear hinge pin.
+	var mid := -TRAY_SIZE.z * 0.5
+	var wall := 0.05
+	var side_h := 0.34
+	for part in [
+			{"size": Vector3(TRAY_SIZE.x, 0.06, TRAY_SIZE.z), "at": Vector3(0, 0.03, mid)},
+			{"size": Vector3(wall, side_h, TRAY_SIZE.z),
+				"at": Vector3(TRAY_SIZE.x * 0.5 - wall * 0.5, 0.20, mid)},
+			{"size": Vector3(wall, side_h, TRAY_SIZE.z),
+				"at": Vector3(-TRAY_SIZE.x * 0.5 + wall * 0.5, 0.20, mid)},
+			{"size": Vector3(TRAY_SIZE.x, side_h, wall),
+				"at": Vector3(0, 0.20, mid - TRAY_SIZE.z * 0.5 + wall * 0.5)},
+			{"size": Vector3(TRAY_SIZE.x, side_h, wall),
+				"at": Vector3(0, 0.20, mid + TRAY_SIZE.z * 0.5 - wall * 0.5)}]:
+		var panel := CollisionShape3D.new()
+		var box := BoxShape3D.new()
+		box.size = Vector3(part["size"])
+		panel.shape = box
+		panel.position = Vector3(part["at"])
+		tray.add_child(panel)
+		M.block(tray, box.size, panel.position, Color("#1f7f82"))
 	tray_joint = HingeJoint3D.new()
 	tray_joint.name = "TrayTipPin"
 	container.add_child(tray_joint)
@@ -107,8 +122,10 @@ func build_tray(container: Node) -> void:
 	tray_joint.node_b = tray_joint.get_path_to(tray)
 	tray_joint.exclude_nodes_from_collision = true
 	tray_joint.set_flag(HingeJoint3D.FLAG_USE_LIMIT, true)
-	tray_joint.set_param(HingeJoint3D.PARAM_LIMIT_LOWER, 0.0)
-	tray_joint.set_param(HingeJoint3D.PARAM_LIMIT_UPPER, TIP_LIMIT_RAD)
+	# The hinge's own positive direction drops the front, so the travel that
+	# raises it is the negative side of the pin.
+	tray_joint.set_param(HingeJoint3D.PARAM_LIMIT_LOWER, -TIP_LIMIT_RAD)
+	tray_joint.set_param(HingeJoint3D.PARAM_LIMIT_UPPER, 0.0)
 	tray_joint.set_flag(HingeJoint3D.FLAG_ENABLE_MOTOR, true)
 	tray_joint.set_param(HingeJoint3D.PARAM_MOTOR_MAX_IMPULSE,
 		TIP_TORQUE_LIMIT_NM / float(Engine.physics_ticks_per_second))
@@ -116,8 +133,11 @@ func build_tray(container: Node) -> void:
 func tip_angle_rad() -> float:
 	if not is_instance_valid(tray):
 		return 0.0
-	var reference: Vector3 = -global_transform.basis.z
-	var current: Vector3 = -tray.global_transform.basis.z
+	# Positive is FRONT UP, the way a tipper actually works. The operand order
+	# matters: reversed, this reads positive while the front dips, which is
+	# exactly the fault that shipped.
+	var reference: Vector3 = -tray.global_transform.basis.z
+	var current: Vector3 = -global_transform.basis.z
 	var axis: Vector3 = global_transform.basis.x.normalized()
 	return atan2(current.cross(reference).dot(axis), current.dot(reference))
 
@@ -126,8 +146,10 @@ func command_tip(direction: float, delta: float) -> void:
 
 func _physics_process(delta: float) -> void:
 	if is_instance_valid(tray_joint):
+		# Negated to match the pin's own direction: a positive tip_target has
+		# to drive the hinge negative to lift the front.
 		tray_joint.set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY,
-			clampf(1.8 * (tip_target - tip_angle_rad()), -0.4, 0.4))
+			-clampf(1.8 * (tip_target - tip_angle_rad()), -0.4, 0.4))
 	_support_on_jockey()
 	last_contact_count = 0
 	var forward := -global_transform.basis.z

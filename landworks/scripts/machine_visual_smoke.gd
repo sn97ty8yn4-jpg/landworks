@@ -27,7 +27,7 @@ func _exercise() -> void:
 		if part.position.length() > 0.00001 or part.scale.distance_to(Vector3.ONE) > 0.00001:
 			errors.append("Imported wheel is not centred at its actual spin origin")
 	# Excavator: the rigged model's own running gear and hydraulics.
-	if rig.track_multimeshes.size() != 2:
+	if rig.track_shoes.size() != 2:
 		errors.append("Missing circulating track belts")
 	if rig.cylinders.size() != 5:
 		errors.append("Expected five aimed cylinders, got %d" % rig.cylinders.size())

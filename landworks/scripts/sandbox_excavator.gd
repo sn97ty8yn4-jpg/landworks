@@ -23,6 +23,9 @@ var attached_load: RigidBody3D:
 var cab_commands: Dictionary = {}
 var hydraulics_enabled := true
 var blade_cutting_edge_y := 0.0
+# Set by the sandbox: true while the operator is seated, so the arrow keys
+# steer the head in the cab instead of driving the tracks and blade.
+var arrows_look := false
 
 func _drive_hydraulics(delta: float) -> void:
     if hydraulics_enabled:
@@ -60,8 +63,11 @@ func _control_aux(_delta: float) -> void:
             continue
         var joint: HingeJoint3D = hinges[id]["joint"]
         var error: float = float(target_angles.get(id,0.0)) - _joint_angle(id)
+        if absf(error) < 0.004:
+            joint.set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY, 0.0)
+            continue
         joint.set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY,
-            -clampf(2.4*error, -0.55, 0.55))
+            -clampf(2.4*error, -0.70, 0.70))
     blade_cutting_edge_y = (dozer_blade.to_global(Vector3(0,-0.23,-0.90)).y
         if is_instance_valid(dozer_blade) else 0.0)
 
@@ -163,34 +169,64 @@ func _physics_process(delta: float) -> void:
         if test_clock >= 12.0 and test_clock < 20.0:
             travel = 0.68
     elif operated:
+        # Every axis is sampled independently each tick and every target is
+        # integrated independently, so any number of movements run at once.
+        # The hydraulic allocator shares pump flow between them, which is why
+        # three services together move slower than one, but none is blocked.
+        #
+        # Right keypad:  8/2 boom, 4/6 bucket curl/dump, 7/9 boom offset.
+        # Left cluster:  W/X arm out/in, A/D slew, S stop tracks.
+        # Arrows:        left/right track levers, up/down dozer blade.
+        # The original I/K, O/L, P/; and Q/E keys still work alongside these.
         var joy := INPUTS.joy_id()
-        travel = clampf(
-            float(Input.is_key_pressed(KEY_W)) - float(Input.is_key_pressed(KEY_S)) -
-            INPUTS.stick_y(true), -1.0, 1.0)
-        turn = clampf(
-            float(Input.is_key_pressed(KEY_D)) - float(Input.is_key_pressed(KEY_A)) +
-            INPUTS.stick_x(true), -1.0, 1.0)
         boom_cmd = clampf(
-            float(Input.is_key_pressed(KEY_I)) - float(Input.is_key_pressed(KEY_K)) +
+            float(Input.is_key_pressed(KEY_KP_8) or Input.is_key_pressed(KEY_I)) -
+            float(Input.is_key_pressed(KEY_KP_2) or Input.is_key_pressed(KEY_K)) +
             INPUTS.trigger(joy, JOY_AXIS_TRIGGER_RIGHT) -
             INPUTS.trigger(joy, JOY_AXIS_TRIGGER_LEFT), -1.0, 1.0)
         stick_cmd = clampf(
-            float(Input.is_key_pressed(KEY_O)) - float(Input.is_key_pressed(KEY_L)) -
+            float(Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_O)) -
+            float(Input.is_key_pressed(KEY_X) or Input.is_key_pressed(KEY_L)) -
             INPUTS.stick_y(false), -1.0, 1.0)
         bucket_cmd = clampf(
-            float(Input.is_key_pressed(KEY_P)) -
-            float(Input.is_key_pressed(KEY_SEMICOLON)) +
+            float(Input.is_key_pressed(KEY_KP_4) or Input.is_key_pressed(KEY_P)) -
+            float(Input.is_key_pressed(KEY_KP_6) or Input.is_key_pressed(KEY_SEMICOLON)) +
             INPUTS.stick_x(false), -1.0, 1.0)
-        slew_cmd = INPUTS.slew()
+        slew_cmd = clampf(
+            float(Input.is_key_pressed(KEY_D)) - float(Input.is_key_pressed(KEY_A)) +
+            INPUTS.slew(), -1.0, 1.0)
+        offset_cmd = clampf(
+            float(Input.is_key_pressed(KEY_KP_7) or Input.is_key_pressed(KEY_BRACKETLEFT)) -
+            float(Input.is_key_pressed(KEY_KP_9) or Input.is_key_pressed(KEY_BRACKETRIGHT)),
+            -1.0, 1.0)
         blade_cmd = float(Input.is_key_pressed(KEY_T)) - float(Input.is_key_pressed(KEY_Y))
-        offset_cmd = (float(Input.is_key_pressed(KEY_BRACKETLEFT))
-            - float(Input.is_key_pressed(KEY_BRACKETRIGHT)))
-    # Ranges are the rigged model's own rig limits.
-    target_angles["boom"] = clampf(float(target_angles["boom"]) + boom_cmd * delta * 0.38,
+        # Arrows drive the machine unless the operator is seated in the cab,
+        # where they still steer the head.
+        if not arrows_look:
+            blade_cmd = clampf(blade_cmd
+                + float(Input.is_key_pressed(KEY_UP))
+                - float(Input.is_key_pressed(KEY_DOWN)), -1.0, 1.0)
+            # Two travel levers, one per track, as on the real machine.
+            # Hold Shift for reverse on either.
+            var reverse := -1.0 if Input.is_key_pressed(KEY_SHIFT) else 1.0
+            var left_lever := float(Input.is_key_pressed(KEY_LEFT)) * reverse
+            var right_lever := float(Input.is_key_pressed(KEY_RIGHT)) * reverse
+            if Input.is_key_pressed(KEY_S):
+                left_lever = 0.0
+                right_lever = 0.0
+            travel = (left_lever + right_lever) * 0.5 - INPUTS.stick_y(true)
+            turn = (right_lever - left_lever) * 0.5 + INPUTS.stick_x(true)
+        travel = clampf(travel, -1.0, 1.0)
+        turn = clampf(turn, -1.0, 1.0)
+    # Ranges are the rigged model's own rig limits. The command rates are
+    # scaled to those wider ranges: at the old rates a full boom sweep took
+    # 5.7 s and a full bucket curl 4.4 s, which is what felt unresponsive.
+    # These give roughly 3.5 s, 3.0 s and 2.5 s end to end.
+    target_angles["boom"] = clampf(float(target_angles["boom"]) + boom_cmd * delta * 0.62,
         -1.047, 1.100)
-    target_angles["stick"] = clampf(float(target_angles["stick"]) + stick_cmd * delta * 0.47,
+    target_angles["stick"] = clampf(float(target_angles["stick"]) + stick_cmd * delta * 0.70,
         -2.094, 0.0)
-    target_angles["bucket"] = clampf(float(target_angles["bucket"]) + bucket_cmd * delta * 0.58,
+    target_angles["bucket"] = clampf(float(target_angles["bucket"]) + bucket_cmd * delta * 1.00,
         -0.698, 1.833)
     target_angles["blade"] = clampf(float(target_angles.get("blade",0.0)) + blade_cmd * delta * 0.30,
         -0.314, 0.314)
