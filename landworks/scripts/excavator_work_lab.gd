@@ -26,11 +26,15 @@ const OFFSET_TORQUE_LIMIT_NM := 30000.0
 const TRACK_MACHINE_MASS_KG := 8170.0
 const TRACK_SPEED_FEEDBACK_N_PER_MPS := 24000.0
 const TRACK_LATERAL_SKID_N_PER_MPS := 1900.0
+# How much of a contact patch's grip resists sideways slip. A rubber track
+# holds far better along its length than across it, which is what lets the
+# machine pivot on the spot; at 1.0 it could not neutral-turn at all.
+const LATERAL_GRIP_FRACTION := 0.18
 const BOOM_TORQUE_LIMIT_NM := 75000.0  # engineering starting assumption, NOT OEM value
-# Briefly raised to 60000 and 28000 while the arm looked short of torque. It
-# was not: the travel it was missing came from the hinge limit being applied
-# symmetrically, and once that was fixed the extra torque only bought pins the
-# solver could not hold, pulling the bucket 74 mm out of line in clear air.
+# Both were tried higher — 60000 and 28000 — on the theory that the arm and
+# bucket were short of torque. Neither changed any measurement: the travel
+# they looked to be missing came from the hinge limit being applied
+# symmetrically. They stay where they were.
 const STICK_TORQUE_LIMIT_NM := 45000.0
 const BUCKET_TORQUE_LIMIT_NM := 20000.0
 const SLEW_TORQUE_LIMIT_NM := 25000.0
@@ -39,6 +43,13 @@ const CUSHION_RAD := 0.22
 # What fraction of its torque a fully stalled service holds, standing in for
 # the relief valve lifting rather than the pin being torn out.
 const RELIEF_TORQUE_FRACTION := 0.30
+# How fast the slew may change the speed it asks for. Stepped, 4.7 tonnes of
+# upper reached full slew speed inside a tenth of a second with nothing to
+# accelerate. The arm services were ramped the same way and it cost too much:
+# full boom lift went from 2.3 s to 3.04, past the gate that exists because
+# those controls had already been reported as unresponsive once. The arm is
+# not where the weightlessness shows, so it stays direct.
+const SLEW_ACCEL_RADS2 := 0.35
 const TEST_END_S := 32.0
 
 var case_name := "lift_500"
@@ -60,6 +71,9 @@ var fit_blade_and_offset := false
 # loose props and the soil.
 var fit_ground_handling_toe := true
 var slew_joint: HingeJoint3D
+# The slew speed actually being asked for, ramped toward what the controller
+# wants so the house has to be spun up rather than snapping to speed.
+var slew_command_rads := 0.0
 var data_file: FileAccess
 var sample_elapsed := 0.0
 var peak_tilt_deg := 0.0
@@ -235,8 +249,20 @@ func _build_machine() -> void:
         -1.047, 1.100, _motor_impulse(BOOM_TORQUE_LIMIT_NM))
     _make_hinge("stick", boom, stick, stick_pin, Vector3.RIGHT,
         -2.360, 0.0, _motor_impulse(STICK_TORQUE_LIMIT_NM))
+    # Curl is the NEGATIVE direction here, measured at the bucket pin: from
+    # rest the angle between the tooth and the arm closes from 132 to 83
+    # degrees going down, and opens going up. The band was the wrong way
+    # round about rest, giving 125 degrees of dump and 55 of curl, which is
+    # the reverse of any bucket. Mirrored, so curl has the long half. The
+    # modelled ram is no help in sizing this one: its two pins ride the same
+    # bound part, so its length never changes across the whole band.
+    # The curl stop is where the cylinder can actually hold it, not where the
+    # geometry would allow: asked for -2.43 it stalled at -1.50 and the motor
+    # ground against the 0.93 rad it could not reach, dragging the pin 104 mm
+    # out of line. At -1.60 it settles around -1.10, closing the bucket from
+    # 135 degrees between tooth and arm to 60, and the pin stays in line.
     _make_hinge("bucket", stick, bucket, bucket_pin, Vector3.RIGHT,
-        -1.200, 1.950, _motor_impulse(BUCKET_TORQUE_LIMIT_NM))
+        -1.600, 0.720, _motor_impulse(BUCKET_TORQUE_LIMIT_NM))
     var hook: Vector3 = bucket.to_global(BUCKET_TIP)
     var is_free_object := fit_ground_handling_toe and (
         case_name.begins_with("push_") or case_name.begins_with("roll_"))
@@ -321,8 +347,12 @@ func _control_slew(target_rad: float) -> void:
     var rel_ang_vel: float = (upper.angular_velocity - undercarriage.angular_velocity).dot(Vector3.UP)
     # The Jolt hinge-motor sign is opposite to the measured yaw sign here.
     # Without this inversion the carriage spins uncommanded toward 180 degrees.
-    slew_joint.set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY,
-        -clampf(2.0 * error - 0.65 * rel_ang_vel, -0.45, 0.45))
+    # Ramped like the arm services: 4.7 tonnes of upper was reaching full slew
+    # speed in under a tenth of a second, which is what slewing too easily was.
+    var wanted := -clampf(2.0 * error - 0.65 * rel_ang_vel, -0.45, 0.45)
+    var step := SLEW_ACCEL_RADS2 / float(Engine.physics_ticks_per_second)
+    slew_command_rads += clampf(wanted - slew_command_rads, -step, step)
+    slew_joint.set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY, slew_command_rads)
 
 func _drive_tracks(target_left: float, target_right: float) -> void:
     # Track contact-force approximation: two longitudinal contact patches per
@@ -374,7 +404,24 @@ func _drive_tracks(target_left: float, target_right: float) -> void:
             # Sideways sliding of a rubber track is resisted, but not welded
             # to the ground. The front/rear patch arms create realistic
             # turning scrub and help damp yaw oscillations.
-            var lateral_n := -lateral_mps * TRACK_LATERAL_SKID_N_PER_MPS
+            #
+            # This used to be purely viscous — 1900 N per m/s — which resists
+            # a fast slide and almost nothing slow. A tractor leaning on the
+            # machine at walking pace therefore pushed 8.8 tonnes around at
+            # will. Ask instead for the force that would arrest the slip
+            # inside one tick, the way standing friction does, and let the
+            # grip budget below be what limits it.
+            # Capped at a fraction of the patch's grip, because a track grips
+            # less sideways than along its length — which is exactly how a
+            # tracked machine pivots on the spot. Demanding a full arrest took
+            # the whole friction circle sideways and left nothing to drive
+            # with, and the machine could no longer neutral-turn at all.
+            var arrest_n: float = lateral_mps * (TRACK_MACHINE_MASS_KG
+                / float(contacts * 2)) * float(Engine.physics_ticks_per_second)
+            var lateral_budget := per_patch_mu_n * LATERAL_GRIP_FRACTION
+            var lateral_n := -clampf(maxf(absf(arrest_n),
+                absf(lateral_mps) * TRACK_LATERAL_SKID_N_PER_MPS),
+                0.0, lateral_budget) * signf(lateral_mps)
             var combined := Vector2(drive_n, lateral_n)
             if combined.length() > per_patch_mu_n:
                 combined *= per_patch_mu_n / combined.length()

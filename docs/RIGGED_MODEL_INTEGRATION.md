@@ -337,6 +337,73 @@ cap every time.
   travel tops out at 2.9 km/h against 2.9 for the real machine's low range.
   Nothing was changed. If it still reads light in play it is not the mass.
 
+## The bucket's range was on the wrong side, and the machine had no weight
+
+A second round of play reported the stick and bucket ranges "too much
+inverted", the boom correct, and the machine feeling light — slewing and
+lifting too easily, and being pushed and nearly rolled by minor contact with
+the tractor.
+
+**The bucket.** Curl is the NEGATIVE direction, measured at the bucket pin as
+the angle between the tooth and the arm closing: from rest that angle falls
+from 132 to 83 degrees going down, and opens going up. The band had been
+written the other way round, giving **125 degrees of dump against 55 of
+curl** — the reverse of any bucket, and the long half spent opening. Mirrored.
+From rest the bucket now closes 74 degrees and opens 40.
+
+Its stop then had to come back in. Asked for the full mirrored band it stalled
+0.9 rad short and the motor ground at what it could not reach, dragging the
+pin 104 mm out of line. The stop is now where the cylinder can actually hold
+it. The modelled ram is no help in sizing this one: `Cyl_Bucket_Barrel` and
+`Pin_HLink_Q` ride the same bound part, so the ram's length never changes
+across the whole band — worth knowing, because it also means that cylinder
+never appears to stroke.
+
+**The stick** was left alone, and the measurement is why: its ram does stroke
+properly, 1.793 to 2.529 m across the band, extending to 1.41x its shortest,
+which is a realistic cylinder. The band already spans the modelled ram's whole
+travel, and the machine simply parks with its arm near full extension.
+
+**The weight.** Two causes, both measured. The undercarriage sits on contacts
+with a friction of 0.015 — deliberately almost frictionless, because the track
+model applies its own forces — and that model's sideways term was purely
+viscous, 1900 N per m/s. Viscous resistance opposes speed, not a shove, so a
+tractor leaning on the machine at walking pace met almost nothing: **a steady
+3400 N moved 8.8 tonnes 0.98 m in five seconds**. The sideways term now asks
+for the force that would arrest the slip within a tick, the way standing
+friction does. The same push now moves it **12 mm**, and it still drives
+itself 2.5 m in five seconds.
+
+That grip is capped at 18 per cent of the patch's budget, and the figure was
+found the hard way. A track holds far better along its length than across it,
+and that difference is exactly how a tracked machine pivots on the spot:
+demanding a full sideways arrest took the whole friction circle and left
+nothing to drive with, so `lift_pivot_500` went from passing to no neutral
+turn at all. At 35 per cent it managed 26 degrees of yaw against a 35 degree
+gate; at 18 it manages 101, while a steady 3400 N still moves it only 12 mm.
+It also pulled the bucket pin separation down from 66 mm to 34, because far
+less force was being dragged through the chain.
+
+Separately, nothing had to be accelerated. The motors' target velocities were
+stepped, so the slew reached full speed inside a single tick: 4.7 tonnes of
+upper was at full slew speed in **under 0.1 s**. That command is now ramped —
+0.038 rad/s at the same instant, reaching the same peak later.
+
+The arm services were ramped the same way and it was undone. It cost too
+much: full boom lift went from 2.3 s to **3.04**, past the gate that exists
+because those controls had already come back once as unresponsive. The arm is
+not where the weightlessness shows, so it stays direct. Lift still takes
+2.7 s, slightly up from 2.3, because the machine is now planted enough to
+work against.
+
+### What did not matter
+
+Three things were tried against the bucket pin separating and measured
+byte-identical, so they are recorded rather than kept: raising the bucket and
+arm cylinder torques, excluding the bucket from colliding with its own
+machine, and the stalled-service relief. The bucket sags about 40 per cent
+short of any commanded extreme under gravity, and that is not yet explained.
+
 ## The camera that did not follow
 
 `orbit_yaw` was an absolute world bearing, so the camera held its heading
@@ -439,13 +506,18 @@ actually there now, and `rigged_model_smoke` was added on top.
 
 ## Known limitations
 
-* **The bucket pin still separates about 66 mm** at the extremes of its
-  travel, in clear air, with nothing touching it. That is down from 204 mm at
-  the old solver settings, but it is not good. It shows now because the bucket
-  reaches poses it never could before. The gate is set at 85 mm to catch a
-  return to that, not to bless 66. Lowering the bucket cylinder torque barely
-  moved it (66 mm at 20 kN·m against 63 at 28), so the remaining separation is
-  the solver rather than the load.
+* **The bucket sags about 40 per cent short of a commanded extreme** under
+  gravity. Commanding further gets more travel but grinds the pin, so the
+  stops are set where the cylinder holds. Torque, self-collision and the
+  stall relief were each ruled out by measurement; the cause is still open.
+* **The bucket cylinder never strokes.** Both the pins it is aimed between
+  ride the same bound part, so its length is constant across the whole band.
+  The ram is drawn but does not extend as the bucket works.
+* **The bucket pin separates about 34 mm** at the extremes of its travel, in
+  clear air. It has been 204 mm at the old solver settings, 104 with the band
+  asking for curl the cylinder could not reach, and 66 before the sideways
+  track grip stopped dragging the whole chain about; the gate is 60 mm. This
+  is now inside the 40 mm the dig regression has always held itself to.
 
 * **The cab levers no longer animate.** The modelled interior is one mesh
   rather than separate joystick and travel-lever nodes, so `detailed_cab.gd`

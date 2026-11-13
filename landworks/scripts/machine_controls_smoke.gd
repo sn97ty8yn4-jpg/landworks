@@ -75,13 +75,12 @@ func _run() -> void:
 	await _settle(300)
 	var air: Dictionary = await _sweep(digger, anchors, ["stick", "bucket"])
 	print("PIN_SWEEP_AIR worst_gap_m=", String.num(air["gap"], 4), " at ", air["name"])
-	# Measured 66 mm at the bucket. That is not good, and it is recorded as a
-	# known limitation rather than hidden: the bucket now travels 149 degrees
-	# where it used to manage 54, and these are poses it never reached before.
-	# The limit is set to catch a return to the 100 mm this showed with the
-	# stops in the wrong frame, or the 183 mm it reached with the solver
-	# under-stepped, not to bless 66.
-	check(float(air["gap"]) < 0.085,
+	# Measured 34 mm. It has been 204 with the solver under-stepped, 104 with
+	# the bucket band asking for curl the cylinder could not reach, and 66
+	# before the sideways track grip stopped dragging the whole chain about.
+	# The limit catches a return to any of those, with margin over what is
+	# measured now.
+	check(float(air["gap"]) < 0.060,
 		"Working the arm in clear air pulls the %s pin %.0f mm apart" % [
 			air["name"], float(air["gap"]) * 1000.0])
 	var loaded: Dictionary = await _sweep(digger, anchors, ["boom", "stick", "bucket"])
@@ -118,7 +117,9 @@ func _run() -> void:
 	var before := _bearing(lower, world.camera)
 	var yaw_before: float = lower.global_rotation.y
 	var spun := 0
-	while spun < 1500 and absf(angle_difference(lower.global_rotation.y, yaw_before)) < 0.8:
+	# Allow longer than it used to need: the tracks grip properly now and the
+	# slew is ramped, so a neutral turn takes real time rather than snapping.
+	while spun < 3600 and absf(angle_difference(lower.global_rotation.y, yaw_before)) < 0.8:
 		digger._drive_tracks(-0.7, 0.7)
 		await physics_frame
 		spun += 1
@@ -146,6 +147,68 @@ func _run() -> void:
 		else:
 			check(left == "stick", "ISO left lever worked %s, not the arm" % left)
 			check(right == "boom", "ISO right lever worked %s, not the boom" % right)
+
+	# 5b. The bucket must curl further than it dumps, and curl to a bucket that
+	# is actually shut. Curl is the negative direction, measured at the pin as
+	# the angle between the tooth and the arm closing. The band was mirrored,
+	# giving 125 degrees of dump against 55 of curl, and the curl side bottomed
+	# out at 83 degrees of closure — a bucket that never shuts.
+	var curl_band: Vector2 = digger.joint_limits("bucket")
+	var bucket_rest: float = float(digger.hinges["bucket"]["build_angle"])
+	check(bucket_rest - curl_band.x > curl_band.y - bucket_rest,
+		"The bucket dumps further than it curls: %.0f deg curl against %.0f dump" % [
+			rad_to_deg(bucket_rest - curl_band.x),
+			rad_to_deg(curl_band.y - bucket_rest)])
+	digger.target_angles["boom"] = 0.85
+	digger.target_angles["stick"] = -1.20
+	digger.target_angles["bucket"] = curl_band.x
+	await _settle(420)
+	var shut: float = _closure_deg(digger)
+	digger.target_angles["bucket"] = curl_band.y
+	await _settle(420)
+	var open: float = _closure_deg(digger)
+	digger.target_angles["bucket"] = bucket_rest
+	await _settle(420)
+	var resting: float = _closure_deg(digger)
+	print("BUCKET_CLOSURE rest ", String.num(resting, 1), " curled ",
+		String.num(shut, 1), " dumped ", String.num(open, 1), " deg")
+	# Measured in what the bucket actually reaches, not just what the band
+	# offers: from rest it must close further than it opens. Reversed, it had
+	# 125 degrees of dump against 55 of curl.
+	check(resting - shut > open - resting,
+		"The bucket opens %.0f degrees from rest but only closes %.0f" % [
+			open - resting, resting - shut])
+	check(shut < 70.0, "Fully curled the bucket is still %.0f degrees open" % shut)
+	digger.target_angles["bucket"] = bucket_rest
+	await _settle(180)
+
+	# 5c. The machine must have mass. A tractor leaning on it at 3400 N used to
+	# push 8.8 tonnes nearly a metre in five seconds, because the sideways
+	# track resistance was purely viscous and so resisted speed, not a shove.
+	digger.target_angles["boom"] = 0.24
+	await _settle(300)
+	var stood: Vector3 = digger.undercarriage.global_position
+	for _n in range(600):
+		digger.undercarriage.apply_central_force(
+			digger.undercarriage.global_transform.basis.x * 3400.0)
+		await physics_frame
+	var shoved: float = stood.distance_to(digger.undercarriage.global_position)
+	print("STEADY_PUSH moved_m=", String.num(shoved, 3))
+	check(shoved < 0.25,
+		"A steady 3400 N shoved the machine %.2f m in five seconds" % shoved)
+	# ...and must still be able to drive itself out of its own tracks.
+	await _settle(120)
+	var parked: Vector3 = digger.undercarriage.global_position
+	digger.scripted_test = true
+	digger.access_test = true
+	await _settle(600)
+	var drove: float = parked.distance_to(digger.undercarriage.global_position)
+	print("STILL_DRIVES travelled_m=", String.num(drove, 3))
+	check(drove > 1.0,
+		"Gripping the tracks left the machine unable to drive: %.2f m in five seconds" % drove)
+	digger.scripted_test = false
+	digger.access_test = false
+	await _settle(120)
 
 	# 6. The trailer must roll on the modelled wheels, not the procedural ones.
 	# Both were present: the hide pass only looked one level down, so the old
@@ -211,6 +274,14 @@ func _sweep(digger, anchors: Dictionary, ids: Array) -> Dictionary:
 			band.x, band.y)
 		await _settle(60)
 	return {"gap": worst, "name": worst_name}
+
+# How far shut the bucket is: the angle at its pin between the tooth and the
+# arm. Curling closes the bucket, so this falls.
+func _closure_deg(digger) -> float:
+	var pin: Vector3 = digger.bucket.global_position
+	var tooth: Vector3 = digger.bucket.to_global(digger.BUCKET_TIP)
+	return rad_to_deg((tooth - pin).normalized().angle_to(
+		(digger.stick.global_position - pin).normalized()))
 
 func _meshes_under(node: Node) -> Array[MeshInstance3D]:
 	var found: Array[MeshInstance3D] = []

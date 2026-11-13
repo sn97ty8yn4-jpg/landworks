@@ -220,6 +220,7 @@ func forget_motion_history() -> void:
         var h: Dictionary = hinges[id]
         h.erase("last_angle")
         h.erase("rate")
+        h.erase("stall")
 
 # The commandable band for a service, in the same terms as _joint_angle, read
 # from the joint that enforces it rather than copied alongside it.
