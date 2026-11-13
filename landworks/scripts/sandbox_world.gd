@@ -36,6 +36,12 @@ var hook_down := false
 var drop_down := false
 var hook_status := "Strap takes hold near a load; G releases it"
 var orbit_yaw := 0.72
+# The heading the camera sits behind. It used to be fixed to the world, so
+# driving away turned the machine out of frame instead of the view following it
+# round, and orbit_yaw is now an offset from this rather than an absolute
+# bearing. Both machines spawn facing yaw 0, so every angle tuned against the
+# old behaviour still frames what it used to.
+var camera_heading := 0.0
 var show_help := false
 var help_down := false
 var help_panel: ColorRect
@@ -89,6 +95,7 @@ var start_targets: Dictionary = {}
 var start_tip := 0.0
 var reset_count := 0
 var reset_down := false
+var pattern_down := false
 var settle_tick := 0
 var start_settled := false
 var tray_discharged_m3 := 0.0
@@ -359,15 +366,20 @@ func _build_ui() -> void:
     instructions.position = Vector2(14,12)
     instructions.add_theme_font_size_override("font_size",15)
     instructions.add_theme_color_override("font_color",Color("#f9ecd5"))
-    instructions.text = "LANDWORKS  •  CONTROLS\n" +         "Tab / Triangle — change machine     Z/C — orbit camera\n" +         "Tractor: W/S travel, A/D steer; PS R2/L2 travel + left stick\n" +         "Excavator: W/S tracks, A/D differential pivot\n" +         "I/K boom  |  O/L stick  |  P/; bucket  |  Q/E slew\n" +         "G / Square — bucket hook     R — dump soil     F12 — old yard\n" +         "Mouse wheel — zoom     F2 — inspection view     F1 — close help"
-    instructions.text += "\nT/Y — dozer blade   [ / ] — boom offset   N/B — tip trailer"
-    instructions.text += "\nExcavator: keypad 8/2 boom, 4/6 bucket, 7/9 boom offset"
-    instructions.text += "\n           W/X arm   A/D slew   S stop tracks"
-    instructions.text += "\n           arrows: left/right track (Shift reverses), up/down blade"
+    instructions.text = "LANDWORKS  •  CONTROLS"
+    instructions.text += "\nTab / Triangle — change machine     Z/C — orbit camera"
+    instructions.text += "\nTractor: W/S travel, A/D steer; PS R2/L2 travel + left stick"
+    instructions.text += "\nExcavator, ISO pattern (F6 swaps to SAE):"
+    instructions.text += "\n   W/X arm      keypad 8/2 boom      keypad 4/6 bucket"
+    instructions.text += "\n   A/D slew      keypad 7/9 boom offset      S stop tracks"
+    instructions.text += "\n   arrows: left/right track (Shift reverses), up/down blade"
+    instructions.text += "\n   I/K boom and O/L arm keep their service in either pattern"
+    instructions.text += "\nG — release the strap; it takes hold near a load once clear"
+    instructions.text += "\nR — dump soil      N/B — tip trailer      F12 — old yard"
     instructions.text += "\nF8 — reset all machines to start (the ground stays as dug)"
     instructions.text += "\nH — drop the hitch; reverse the ball under the ring to re-couple"
-    instructions.text += "\nG — release the strap; it takes hold on its own near a load"
     instructions.text += "\nV — cab/follow   Arrows / right-drag — look   Home — centre"
+    instructions.text += "\nMouse wheel — zoom   F2 — inspection view   F1 — close help"
     help_panel.add_child(instructions)
 
 func _select_machine(which: int) -> void:
@@ -379,6 +391,13 @@ func _select_machine(which: int) -> void:
     # shows its boom silhouette, side cab glazing and seated driver,
     # instead of an almost opaque rear counterweight.
     orbit_yaw = 0.72 if which == 0 else -0.94
+    # Snap the followed heading to the machine being taken over, so switching
+    # machines does not swing the camera round from wherever the other one was.
+    var taken: Node3D = tractor if which == 0 else digger.undercarriage
+    var facing := Vector2(taken.global_transform.basis.z.x,
+        taken.global_transform.basis.z.z)
+    if facing.length() > 0.05:
+        camera_heading = atan2(facing.x, facing.y)
     tractor.controlled = which == 0 and not smoke
     digger.operated = which == 1 and not smoke
     camera_zoom = 1.0
@@ -671,6 +690,16 @@ func _process(delta: float) -> void:
         if reset_pressed and not reset_down:
             hook_status = reset_machines()
         reset_down = reset_pressed
+        # Swap the excavator's control pattern, as the valve on a real machine
+        # does. Nothing about the hydraulics changes, only which lever works
+        # the boom and which works the arm.
+        var pattern_pressed := Input.is_key_pressed(KEY_F6)
+        if pattern_pressed and not pattern_down:
+            digger.sae_pattern = not digger.sae_pattern
+            hook_status = ("Controls: SAE — left lever boom, right lever arm"
+                if digger.sae_pattern
+                else "Controls: ISO — left lever arm, right lever boom")
+        pattern_down = pattern_pressed
         var joy := CI.joy_id()
         var hook_pressed := active_machine == 1 and (
             Input.is_key_pressed(KEY_G) or
@@ -691,10 +720,20 @@ func _process(delta: float) -> void:
         orbit_yaw += (float(Input.is_key_pressed(KEY_C)) -
             float(Input.is_key_pressed(KEY_Z))) * delta * 1.2
     var target: Node3D = tractor if active_machine == 0 else digger.undercarriage
-    var focus := target.global_position + (
-        Vector3(0,0.65,-0.20) if active_machine == 0 else Vector3(0,1.30,-1.45))
+    # Follow the machine's own heading, smoothed, and ignore it while the body
+    # is pitched far enough that its flattened forward is unreliable.
+    var flat := Vector2(target.global_transform.basis.z.x,
+        target.global_transform.basis.z.z)
+    if flat.length() > 0.05:
+        camera_heading = lerp_angle(camera_heading, atan2(flat.x, flat.y),
+            clampf(delta * 3.0, 0.0, 1.0))
+    var offset: Vector3 = (Vector3(0,0.65,-0.20) if active_machine == 0
+        else Vector3(0,1.30,-1.45))
     if inspection_view and active_machine == 1:
-        focus.z -= 0.75
+        offset.z -= 0.75
+    # The look-at point rides in the machine's frame, so it stays ahead of the
+    # machine rather than drifting to one side as it turns.
+    var focus: Vector3 = target.global_position + Basis(Vector3.UP, camera_heading) * offset
     var inspect_pressed := Input.is_key_pressed(KEY_F2)
     if inspect_pressed and not inspection_down:
         inspection_view = not inspection_view
@@ -707,7 +746,8 @@ func _process(delta: float) -> void:
         camera.fov = 46.0
     else:
         camera.fov = 58.0
-    var wanted := focus + Vector3(sin(orbit_yaw) * dist, height, cos(orbit_yaw) * dist)
+    var yaw := camera_heading + orbit_yaw
+    var wanted := focus + Vector3(sin(yaw) * dist, height, cos(yaw) * dist)
     camera.global_position = camera.global_position.lerp(wanted, clampf(delta * 4.5, 0.0, 1.0))
     camera.look_at(focus, Vector3.UP)
     rig_visuals.update_bucket_fill(soil_bucket_m3,soil_bucket_material)
@@ -835,6 +875,7 @@ func reset_machines() -> String:
         body.angular_velocity = Vector3.ZERO
         body.force_update_transform()
     digger.target_angles = start_targets.duplicate()
+    digger.forget_motion_history()
     digger.slew_target_rad = 0.0
     trailer.tip_target = start_tip
     previous_bucket_lip_valid = false

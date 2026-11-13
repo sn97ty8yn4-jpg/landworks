@@ -6,6 +6,11 @@ extends "res://landworks/scripts/excavator_work_lab.gd"
 const INPUTS = preload("res://landworks/scripts/machine_input.gd")
 
 var operated := false
+# Which international control pattern the levers follow. ISO, the default,
+# puts the arm on the left lever and the boom on the right; SAE is the other
+# way round. Real machines carry a valve to swap them, so this is a setting
+# rather than a rewrite, and F6 flips it in the sandbox.
+var sae_pattern := false
 var scripted_test := false
 var access_test := false
 var test_clock := 0.0
@@ -51,6 +56,13 @@ func _joint_angle(id: String) -> float:
         var relative: Basis = a.global_transform.basis.inverse()*b.global_transform.basis
         return atan2(relative.z.x,relative.z.z)
     return super._joint_angle(id)
+
+# Moves a service's target by `step`, held inside the band its own joint
+# enforces, so a lever can never ask for an angle the machine does not have.
+func _advance_target(id: String, step: float) -> void:
+    var band := joint_limits(id)
+    target_angles[id] = clampf(float(target_angles.get(id, 0.0)) + step,
+        band.x, band.y)
 
 func _control_aux(_delta: float) -> void:
     # Dozer blade and boom offset run on their own motors rather than through
@@ -186,15 +198,34 @@ func _physics_process(delta: float) -> void:
         # Arrows:        left/right track levers, up/down dozer blade.
         # The original I/K, O/L, P/; and Q/E keys still work alongside these.
         var joy := INPUTS.joy_id()
-        boom_cmd = clampf(
-            float(Input.is_key_pressed(KEY_KP_8) or Input.is_key_pressed(KEY_I)) -
-            float(Input.is_key_pressed(KEY_KP_2) or Input.is_key_pressed(KEY_K)) +
+        # The two lever clusters are read first and assigned to services after,
+        # because which service a lever works is the whole difference between
+        # the two control patterns. Both put swing on the left lever sideways
+        # and the bucket on the right lever sideways; they disagree only about
+        # boom and arm, and swapping those two is the entire change.
+        #
+        #   ISO (default):  left lever = arm,   right lever = boom
+        #   SAE:            left lever = boom,  right lever = arm
+        #
+        # Real machines carry a valve to swap them, which is why this is a
+        # setting and not a rewrite.
+        var left_hand := clampf(
+            float(Input.is_key_pressed(KEY_W)) - float(Input.is_key_pressed(KEY_X)) -
+            INPUTS.stick_y(false), -1.0, 1.0)
+        var right_hand := clampf(
+            float(Input.is_key_pressed(KEY_KP_8)) - float(Input.is_key_pressed(KEY_KP_2)) +
             INPUTS.trigger(joy, JOY_AXIS_TRIGGER_RIGHT) -
             INPUTS.trigger(joy, JOY_AXIS_TRIGGER_LEFT), -1.0, 1.0)
-        stick_cmd = clampf(
-            float(Input.is_key_pressed(KEY_W) or Input.is_key_pressed(KEY_O)) -
-            float(Input.is_key_pressed(KEY_X) or Input.is_key_pressed(KEY_L)) -
-            INPUTS.stick_y(false), -1.0, 1.0)
+        # The older single-purpose keys stay bound to their own service, so they
+        # mean the same thing whichever pattern is selected.
+        var legacy_boom := float(Input.is_key_pressed(KEY_I)) - float(
+            Input.is_key_pressed(KEY_K))
+        var legacy_stick := float(Input.is_key_pressed(KEY_O)) - float(
+            Input.is_key_pressed(KEY_L))
+        boom_cmd = clampf((left_hand if sae_pattern else right_hand)
+            + legacy_boom, -1.0, 1.0)
+        stick_cmd = clampf((right_hand if sae_pattern else left_hand)
+            + legacy_stick, -1.0, 1.0)
         bucket_cmd = clampf(
             float(Input.is_key_pressed(KEY_KP_4) or Input.is_key_pressed(KEY_P)) -
             float(Input.is_key_pressed(KEY_KP_6) or Input.is_key_pressed(KEY_SEMICOLON)) +
@@ -229,16 +260,14 @@ func _physics_process(delta: float) -> void:
     # scaled to those wider ranges: at the old rates a full boom sweep took
     # 5.7 s and a full bucket curl 4.4 s, which is what felt unresponsive.
     # These give roughly 3.5 s, 3.0 s and 2.5 s end to end.
-    target_angles["boom"] = clampf(float(target_angles["boom"]) + boom_cmd * delta * 0.62,
-        -1.047, 1.100)
-    target_angles["stick"] = clampf(float(target_angles["stick"]) + stick_cmd * delta * 0.70,
-        -2.094, 0.0)
-    target_angles["bucket"] = clampf(float(target_angles["bucket"]) + bucket_cmd * delta * 1.00,
-        -0.698, 1.833)
-    target_angles["blade"] = clampf(float(target_angles.get("blade",0.0)) + blade_cmd * delta * 0.30,
-        -0.314, 0.314)
-    target_angles["offset"] = clampf(float(target_angles.get("offset",0.0)) + offset_cmd * delta * 0.35,
-        -1.047, 1.222)
+    # Clamp against the band the joint itself enforces. These used to be typed
+    # out again here, and because the stops were being set in a different frame
+    # the levers could ask for angles that did not physically exist.
+    _advance_target("boom", boom_cmd * delta * 0.62)
+    _advance_target("stick", stick_cmd * delta * 0.70)
+    _advance_target("bucket", bucket_cmd * delta * 1.00)
+    _advance_target("blade", blade_cmd * delta * 0.30)
+    _advance_target("offset", offset_cmd * delta * 0.35)
     _drive_hydraulics(delta)
     _control_aux(delta)
     slew_target_rad = clampf(slew_target_rad + slew_cmd * delta * 0.50, -PI, PI)

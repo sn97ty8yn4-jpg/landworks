@@ -102,13 +102,47 @@ func _run() -> void:
 	var machines: Array = [world.tractor, world.trailer, world.trailer.tray,
 		digger.undercarriage, digger.upper, digger.king_post, digger.boom,
 		digger.stick, digger.bucket, digger.dozer_blade]
+	# Wait for the machines to actually stop before asking whether they are
+	# home. Restoring them sets a 9 tonne machine down on its tracks, and it
+	# rocks for a few seconds afterwards; the bucket hangs 4.5 m out, so a
+	# fraction of a degree of chassis roll swings it a long way. Measuring at a
+	# fixed instant sampled that swing rather than any drift, and read anywhere
+	# between 10 and 160 mm depending only on which part of it was caught.
+	# Rest has to be sustained. A single tick under the threshold is also what
+	# the far end of a swing looks like, where the machine is momentarily still
+	# and furthest from home: waiting for that alone reported the worst moment
+	# of the rock as though it were the settled position.
+	var waited := 0
+	var quiet := 0
+	while waited < 1200 and quiet < 90:
+		var fastest := 0.0
+		for body in machines:
+			if is_instance_valid(body):
+				fastest = maxf(fastest, (body as RigidBody3D).linear_velocity.length())
+		quiet = quiet + 1 if fastest < 0.02 else 0
+		await physics_frame
+		waited += 1
+	print("RESET_REST settled_after_s=", String.num(float(waited) / float(
+		Engine.physics_ticks_per_second), 2))
+	# Averaged over a second rather than sampled once. A machine this size on
+	# compliant track contacts never goes perfectly still — it idles with a
+	# wobble well under 20 mm/s — and a single sample reports wherever in that
+	# wobble the tick happened to fall. Drifting away means a persistent
+	# offset, which is what the mean measures.
+	var totals := {}
+	var samples := 120
+	for _n in range(samples):
+		for body in snapshot:
+			if not is_instance_valid(body):
+				continue
+			totals[body] = float(totals.get(body, 0.0)) + body.global_position.distance_to(
+				Vector3(snapshot[body].origin))
+		await physics_frame
 	var worst_machine := 0.0
 	var worst_load := 0.0
 	var drifter := ""
-	for body in snapshot:
-		if not is_instance_valid(body):
-			continue
-		var offset: float = body.global_position.distance_to(Vector3(snapshot[body].origin))
+	for body in totals:
+		var offset: float = float(totals[body]) / float(samples)
 		if body in machines:
 			if offset > worst_machine:
 				worst_machine = offset

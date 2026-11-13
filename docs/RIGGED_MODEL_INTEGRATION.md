@@ -225,6 +225,149 @@ old code and passes on the new, and it has to inject its own load because this
 scene's props sit 7.5 m away, which is why the existing boom checks never
 caught the fault.
 
+## The stops that were in a different frame from the commands
+
+Reported from play as the arm breaking when used, the bucket range being too
+limited, and some movements running backwards.
+
+A `HingeJoint3D` limit is measured from the pose the two bodies are in when
+the joint is made. Every target, clamp and test here instead talks in
+`_joint_angle` terms, the child's rotation inside the parent's frame — and
+`target_angles` even starts at `{boom: 0.24, stick: -0.72, bucket: -0.24}`,
+which is each limb's build angle. The bands were handed to the joint without
+shifting, so the stops landed somewhere else entirely:
+
+| service | commanded band | where the stops actually were |
+|---|---|---|
+| boom | −1.047 … +1.100 | −0.809 … +1.338 |
+| arm | −2.094 … 0.000 | −2.812 … **−0.718** |
+| bucket | −0.698 … +1.833 | −0.941 … +1.590 |
+
+The arm's **rest pose was its own upper stop**. Pulling it out could only
+stretch the pin, which is the arm appearing to break: measured 62 mm of
+separation between the same material point in each body, and 100 mm at the
+bucket, against the 40 mm this project already holds itself to elsewhere. The
+lowest 0.238 rad of the boom's commanded travel sat below its stop and the top
+0.243 of the bucket's curl sat above its own, so those parts of the levers did
+nothing. Nothing was inverted — one direction of each service simply ended at
+a stop that was not where the lever thought it was. (The boom also refuses to
+lower with its bucket already resting on the ground, which is not this fault.)
+
+`_make_hinge` now shifts each band into the joint's own frame, and the band is
+kept beside the joint that enforces it so callers clamp against one source of
+truth rather than typing the numbers again. Measured after: the stops land on
+their bands to within 0.01 rad, the worst pin separation across a full sweep
+of every service is **16 mm**, and the arm holds −1.196 rad on command where
+it could previously only reach −0.729.
+
+The bands themselves were then widened, since the first pass gave the bucket
+only 26 degrees of dump: the arm goes to 135 degrees and the bucket to 180.
+
+### The hinge limit is symmetric
+
+Shifting the bands was still not enough, and chasing why turned up the real
+constraint. With the motor at full command and full impulse, the bucket free
+in the air and flow unrestricted, the curl simply stopped at `_joint_angle`
++0.722 and stayed there. In the joint's own frame that is **+0.96, the exact
+magnitude of its lower bound**. The earlier band said the same thing: with
+−0.698 … +1.833 the bucket had stopped at +0.698.
+
+This engine's `HingeJoint3D` applies its limit **symmetrically** — the bound
+smaller in magnitude becomes the stop on both sides — so an asymmetric band
+cannot be expressed on the joint at all. The joint now carries a symmetric
+backstop wide enough for the whole band, and the band itself is held by the
+target clamp, which is the only place it can be asymmetric. The bucket went
+from 54 degrees of curl, to 91 once the frame was right, to **149**.
+
+Two things were tried along the way and undone, which is worth recording so
+they are not tried again. Raising the arm and bucket torques to 60 and 28 kN·m
+looked like the fix while the limit was still biting; it was not — with the
+limit fixed the curl is the same 148.6 degrees at the original 45 and 20, and
+the extra torque only bought pins the solver could not hold. Taking the
+ground-handling toe off the sandbox bucket, on the suspicion it was jamming
+against the arm, made the separation far worse (1.14 m) and was reverted.
+
+What did matter was the solver. A chain of heavy bodies on powered pins was
+running at Jolt's default 10 velocity and 2 position steps. With the bucket
+now reaching poses it never could before, the default settings pulled its pin
+**204 mm** out of line in clear air; at 16 velocity and 8 position steps that
+falls to **66 mm**. Doubling again to 24 and 16 bought 5 mm more and was not
+worth the time, and raising velocity steps alone did nothing — the position
+steps are what hold the chain together.
+
+That change failed `coupling_smoke`, which looked like the trailer nosing
+over at 66 degrees. It was not: the test parks the trailer by placing its
+drawbar ring, which puts the body 0.70 m below the tractor's own origin and
+so well under the ground. It had never been standing on its jockey foot — it
+was settling up out of the terrain onto its nose, reporting the same 66
+degrees every run, and only passing because the weaker solver pushed it out
+gently enough to land flat. It is now dropped in from clear air, which is
+what parking it means, and reads 4.8 degrees.
+
+The damping term also needed attention. It took the rate of change from a
+single tick's difference, which at 120 Hz multiplies solver noise by 120, and
+the boom buzzed at rest, reversing direction on 599 of 600 samples where it
+had settled with none. The rate is now smoothed over about four ticks.
+Reversals are back to 0 and full lift still arrives in 2.3 s. The feel gate
+was not touched. A stalled service also eases its torque now, standing in for
+a relief valve lifting rather than a pin being dragged out of line.
+
+The reset check needed the same treatment. It waited a fixed two seconds and
+then measured once, which landed in the middle of the rock a 9 tonne machine
+does when it is set back down on its tracks — and with the bucket hanging
+4.5 m out, a fraction of a degree of chassis roll swings it a long way. The
+same reset read anywhere between 10 and 160 mm depending only on which part of
+the swing was caught, and it had been passing on phase. It now waits for
+sustained quiet rather than a single tick under the threshold (which is also
+what the far end of a swing looks like) and averages the offset over a second,
+since drifting away means a persistent offset. Reading 82 mm against a limit
+of 120 that was not touched. Worth knowing: the machine never goes perfectly
+still, idling with a wobble under 20 mm/s, so the wait reaches its ten second
+cap every time.
+
+### Two things that turned out not to be broken
+
+* **The slew.** A first probe showed both slew keys turning the house the same
+  way. The probe was at fault: it let `slew_target_rad` accumulate between the
+  two directions and read world yaw rather than yaw relative to the
+  undercarriage. Driven properly the slew follows +0.59 for +0.60 and −0.57
+  for −0.60.
+* **The excavator's mass.** Reported as much too low; measured at 8,760 kg
+  across the seven bodies, which is right for this class, and full-lever
+  travel tops out at 2.9 km/h against 2.9 for the real machine's low range.
+  Nothing was changed. If it still reads light in play it is not the mass.
+
+## The camera that did not follow
+
+`orbit_yaw` was an absolute world bearing, so the camera held its heading
+while the machine turned under it and drove out of frame. It is now an offset
+from the followed machine's heading, smoothed, with the look-at point riding
+in the machine's frame so it stays ahead rather than drifting to one side.
+Both machines spawn facing yaw 0, so every angle tuned against the old
+behaviour still frames what it used to. Measured: the machine turns 0.80 rad
+and the view bearing moves 0.018.
+
+## Control pattern
+
+The sandbox shipped the ISO pattern — arm and swing on the left lever, boom
+and bucket on the right. That is the default and is what play confirmed as
+correct. `F6` swaps to SAE, which exchanges boom and arm, as the valve on a
+real machine does. The older single-purpose keys keep their own service in
+either pattern. Which lever works which service is measured by pressing the
+key and seeing which target moves, not read off the source.
+
+## Trailer wheels
+
+The trailer was still rolling on the procedural tyres. Two faults together:
+`M.tyre` hangs its meshes off a support node, and the hide pass only looked
+one level down, so nothing was ever hidden; and the modelled `Wheel_L` and
+`Wheel_R` sat rigid inside the bound chassis, where they could not turn. Each
+modelled wheel now moves onto the hub the trailer already rolls, keeping the
+rotation it carries in the model — `_bind` replaces a part's basis, which is
+right for a limb on its own origin and would lay a wheel flat. The hide is
+recursive, and the check counts any mesh still drawing on a hub that did not
+come from the model.
+
 ## Assumptions, and what is not measured
 
 These numbers are engineering choices, not values the models supply.
@@ -283,8 +426,26 @@ actually there now, and `rigged_model_smoke` was added on top.
   `35f2fa2`, the commit before the integration. It now asks whichever owner built a cab
   and refuses to continue if neither did, and the workflow asserts all six
   frames rather than two, so a missing frame fails on its own.
+* **`machine_controls_smoke`** is new. It asserts that every service's stops
+  land on the band its lever commands, that a lever cannot ask for an angle
+  outside it, that sweeping each service does not pull a pin apart, that the
+  bucket keeps a usable curl, that the camera follows the machine round, that
+  each lever works the service its pattern says, and that the trailer rolls on
+  the modelled wheels with nothing procedural still drawing. Reverting the
+  stop shift alone fails it on all three joints, which is what it is for.
+* **`reset_smoke`** had been passing on phase. See the reset note above: it
+  waits for sustained rest and averages the offset over a second now, with
+  its 120 mm limit unchanged.
 
 ## Known limitations
+
+* **The bucket pin still separates about 66 mm** at the extremes of its
+  travel, in clear air, with nothing touching it. That is down from 204 mm at
+  the old solver settings, but it is not good. It shows now because the bucket
+  reaches poses it never could before. The gate is set at 85 mm to catch a
+  return to that, not to bless 66. Lowering the bucket cylinder torque barely
+  moved it (66 mm at 20 kN·m against 63 at 28), so the remaining separation is
+  the solver rather than the load.
 
 * **The cab levers no longer animate.** The modelled interior is one mesh
   rather than separate joystick and travel-lever nodes, so `detailed_cab.gd`

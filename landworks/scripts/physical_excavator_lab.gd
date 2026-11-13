@@ -85,13 +85,38 @@ func _make_hinge(id: String, parent: PhysicsBody3D, child: PhysicsBody3D,
     joint.node_b = joint.get_path_to(child)
     joint.exclude_nodes_from_collision = true
     joint.set_flag(HingeJoint3D.FLAG_USE_LIMIT, true)
-    joint.set_param(HingeJoint3D.PARAM_LIMIT_LOWER, lower)
-    joint.set_param(HingeJoint3D.PARAM_LIMIT_UPPER, upper)
+    # Jolt measures a hinge limit from the pose the two bodies are in when the
+    # joint is made. Every target, clamp and test in this project instead talks
+    # in _joint_angle terms, the child's rotation inside the parent's frame.
+    # Those two zeros differ by however far the limb was built from its parent,
+    # so passing a band straight through put the real stops somewhere else: the
+    # arm's rest pose WAS its stop, so pulling it out only stretched the pin,
+    # and the bottom of the boom's lever and the top of the bucket's curl asked
+    # for angles with no stop behind them. Shift the band into the joint's own
+    # frame so the stops land where the commands think they are.
+    var build := _build_angle(parent, child, axis)
+    # This engine's hinge applies a SYMMETRIC limit: the bound smaller in
+    # magnitude becomes the stop on BOTH sides, so an asymmetric band cannot be
+    # expressed here at all. Measured twice over: a bucket band of
+    # -0.698..+1.833 stopped it curling at +0.698, and -0.960..+2.190 stopped
+    # it at +0.960 — each time at the magnitude of the lower bound, with the
+    # motor still at full command and the bucket free in the air. The joint
+    # therefore carries a symmetric backstop wide enough for the whole band,
+    # and the band itself is held by the target clamp, which is the only place
+    # it can be asymmetric.
+    var backstop: float = maxf(absf(lower - build), absf(upper - build))
+    joint.set_param(HingeJoint3D.PARAM_LIMIT_LOWER, -backstop)
+    joint.set_param(HingeJoint3D.PARAM_LIMIT_UPPER, backstop)
     joint.set_flag(HingeJoint3D.FLAG_ENABLE_MOTOR, true)
     joint.set_param(HingeJoint3D.PARAM_MOTOR_MAX_IMPULSE, max_impulse)
+    # The band is kept beside the joint that enforces it so callers clamp
+    # against one source of truth instead of repeating the numbers, which is
+    # how the commands and the stops came to describe different machines.
     hinges[id] = {"joint": joint, "a": parent, "b": child, "axis": axis,
-        # Raised with the widened rig limits: the boom now sweeps 123 degrees
-        # and the bucket 145, so the old ceilings made the controls crawl.
+        "limit_lower": lower, "limit_upper": upper, "build_angle": build,
+        # Raised with the widened rig limits: the boom now sweeps 123 degrees,
+        # the arm 135 and the bucket 180, so the old ceilings made the
+        # controls crawl.
         "max_speed": 0.80 if id == "boom" else 1.05}
 
 func _build_machine() -> void:
@@ -175,6 +200,34 @@ func _build_scene() -> void:
     labels.add_theme_font_size_override("font_size", 21)
     labels.add_theme_color_override("font_color", Color.WHITE)
     canvas.add_child(labels)
+
+# The child's rotation inside the parent's frame about the pin, measured the
+# same way _joint_angle measures it, but from the bodies directly so it can be
+# taken before the hinge is registered.
+static func _build_angle(parent: PhysicsBody3D, child: PhysicsBody3D,
+        axis: Vector3) -> float:
+    var relative: Basis = parent.global_transform.basis.inverse() * child.global_transform.basis
+    if axis == Vector3.UP:
+        return atan2(relative.z.x, relative.z.z)
+    return atan2(relative.y.z, relative.y.y)
+
+# Drops the cached angle and rate every joint controller damps against. A
+# deliberate restore moves the bodies without them having moved, and the next
+# tick would otherwise read that jump as motion and kick the arm — the same
+# reason the reset drops the soil solver's cutting-edge history.
+func forget_motion_history() -> void:
+    for id in hinges:
+        var h: Dictionary = hinges[id]
+        h.erase("last_angle")
+        h.erase("rate")
+
+# The commandable band for a service, in the same terms as _joint_angle, read
+# from the joint that enforces it rather than copied alongside it.
+func joint_limits(id: String) -> Vector2:
+    if not hinges.has(id):
+        return Vector2(-PI, PI)
+    var h: Dictionary = hinges[id]
+    return Vector2(float(h.get("limit_lower", -PI)), float(h.get("limit_upper", PI)))
 
 func _joint_angle(id: String) -> float:
     var data: Dictionary = hinges[id]

@@ -34,6 +34,7 @@ var shoe_basis := Basis.IDENTITY
 var track_updates := 0
 var bucket_tip: Node3D
 var tray_art: Node3D
+var wheel_art: Array[Node3D] = []
 var blade_art: Node3D
 var king_post_art: Node3D
 var cab: Node3D
@@ -74,6 +75,31 @@ func _bind(part: Node3D, body: Node3D, offset: Vector3 = Vector3.ZERO) -> Node3D
 		parent.remove_child(part)
 	body.add_child(part)
 	part.transform = Transform3D(Basis(Vector3.UP, MODEL_YAW), offset)
+	bound_parts += 1
+	return part
+
+# Hides every mesh in a subtree. The one-level version below missed the
+# procedural tyres, because M.tyre hangs its meshes off a support node rather
+# than off the wheel root, so they kept drawing through the modelled wheels.
+func _hide_all_meshes(node: Node) -> void:
+	if node is MeshInstance3D:
+		(node as MeshInstance3D).visible = false
+	for child in node.get_children():
+		_hide_all_meshes(child)
+
+# Binds a part that has to keep turning, preserving the orientation it carries
+# in the model. _bind replaces a part's basis outright, which is right for a
+# limb pivoting on its own origin and wrong for a wheel: a wheel holds its own
+# rotation in the model and would be laid flat by it.
+func _bind_spinning(part: Node3D, spinner: Node3D) -> Node3D:
+	if part == null or spinner == null:
+		return null
+	var own: Basis = part.transform.basis
+	var parent := part.get_parent()
+	if parent != null:
+		parent.remove_child(part)
+	spinner.add_child(part)
+	part.transform = Transform3D(Basis(Vector3.UP, MODEL_YAW) * own, Vector3.ZERO)
 	bound_parts += 1
 	return part
 
@@ -315,11 +341,22 @@ func attach_trailer(unit: Node3D) -> void:
 		return
 	var chassis := _find(trailer_root, "Chassis")
 	var tray := _find(trailer_root, "Tray_Pivot")
+	# Taken before the chassis is reparented; these move with it, and the
+	# references stay good.
+	var model_wheels := [_find(trailer_root, "Wheel_L"), _find(trailer_root, "Wheel_R")]
 	_hide_primitive_art(trailer)
-	for child in trailer.get_children():
-		if child.name == "TrailerWheelVisual":
-			_hide_primitive_art(child)
 	_bind(chassis, trailer)
+	# The trailer still rolled on the procedural tyres: they were never hidden,
+	# and the modelled wheels were left rigid inside the chassis so they could
+	# not turn. Move each modelled wheel onto the root the trailer already
+	# rolls, which is built left first at -HALF_TRACK, matching Wheel_L.
+	var spinners: Array = trailer.get("wheel_visuals")
+	if spinners != null:
+		for index in range(mini(model_wheels.size(), spinners.size())):
+			_hide_all_meshes(spinners[index])
+			var fitted := _bind_spinning(model_wheels[index], spinners[index])
+			if fitted != null:
+				wheel_art.append(fitted)
 	var tray_body: Node3D = trailer.get("tray")
 	if tray_body != null:
 		_hide_primitive_art(tray_body)

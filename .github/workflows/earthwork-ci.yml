@@ -63,6 +63,11 @@ jobs:
         run: |
           timeout 110s godot --headless --path . --script res://landworks/scripts/machine_feel_smoke.gd 2>&1 | tee ci-earthworks/feel.log
           grep 'MACHINE_FEEL PASS' ci-earthworks/feel.log
+      - name: Test camera follow, control pattern and joint ranges
+        shell: bash
+        run: |
+          timeout 220s godot --headless --path . --script res://landworks/scripts/machine_controls_smoke.gd 2>&1 | tee ci-earthworks/controls.log
+          grep 'MACHINE_CONTROLS PASS' ci-earthworks/controls.log
       - name: Test the global machine reset
         shell: bash
         run: |

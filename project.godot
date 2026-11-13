@@ -24,3 +24,14 @@ common/physics_ticks_per_second=120
 
 [physics/3d]
 default_gravity=9.81
+
+[physics/jolt_physics_3d]
+
+; A chain of heavy bodies on powered pins needs more solver work than the
+; defaults of 10 velocity and 2 position steps. At the defaults the bucket
+; pin separated 204 mm in clear air at the extremes of its travel, which is
+; what "the arm breaks when used" looks like; at these settings it is 66 mm.
+; The position steps are what hold the chain together - raising the velocity
+; steps alone changed nothing.
+simulation/velocity_steps=16
+simulation/position_steps=8

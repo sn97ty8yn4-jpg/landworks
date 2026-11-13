@@ -27,9 +27,18 @@ const TRACK_MACHINE_MASS_KG := 8170.0
 const TRACK_SPEED_FEEDBACK_N_PER_MPS := 24000.0
 const TRACK_LATERAL_SKID_N_PER_MPS := 1900.0
 const BOOM_TORQUE_LIMIT_NM := 75000.0  # engineering starting assumption, NOT OEM value
+# Briefly raised to 60000 and 28000 while the arm looked short of torque. It
+# was not: the travel it was missing came from the hinge limit being applied
+# symmetrically, and once that was fixed the extra torque only bought pins the
+# solver could not hold, pulling the bucket 74 mm out of line in clear air.
 const STICK_TORQUE_LIMIT_NM := 45000.0
 const BUCKET_TORQUE_LIMIT_NM := 20000.0
 const SLEW_TORQUE_LIMIT_NM := 25000.0
+# How far out from a stop a service starts easing off, in radians.
+const CUSHION_RAD := 0.22
+# What fraction of its torque a fully stalled service holds, standing in for
+# the relief valve lifting rather than the pin being torn out.
+const RELIEF_TORQUE_FRACTION := 0.30
 const TEST_END_S := 32.0
 
 var case_name := "lift_500"
@@ -41,6 +50,15 @@ var upper: RigidBody3D
 var king_post: RigidBody3D
 var dozer_blade: RigidBody3D
 var fit_blade_and_offset := false
+# The ground-handling cases bolt a toe onto the bucket and widen its collision
+# mask so it can shove a crate about. Widening the mask also lets the bucket
+# hit the machine's own limbs, which are on that layer: in the sandbox, which
+# inherited the push case, the bucket jammed against the arm at +0.72 rad and
+# the cylinder then ground against it, pulling the bucket pin 113 mm out of
+# line with the tooth 1.1 m clear of the ground. The measurement lab still
+# wants it; the sandbox does not, and keeps layer 1 so it can still push the
+# loose props and the soil.
+var fit_ground_handling_toe := true
 var slew_joint: HingeJoint3D
 var data_file: FileAccess
 var sample_elapsed := 0.0
@@ -207,16 +225,21 @@ func _build_machine() -> void:
     var bucket_pin: Vector3 = stick.to_global(Vector3(0, 0, -STICK_LENGTH))
     bucket = _make_box("Bucket_300kg", 300.0, bucket_pin, -0.72,
         BUCKET_LENGTH, 0.44, BUCKET_WIDTH, Color("#42494a"))
-    # Ranges taken from the rigged model: boom -60 to +63 degrees, arm 30 to
-    # 150 degrees of crowd, bucket -40 (dumped) to +105 (curled).
+    # Bands in _joint_angle terms, where the limbs rest at boom +0.24, arm
+    # -0.72 and bucket -0.24. Engineering choices for a machine of this class,
+    # not figures the model carries: boom 123 degrees, arm 135, bucket 180.
+    # The arm and the bucket are wider than the first pass, which gave the arm
+    # 120 degrees and the bucket 145 and left the bucket only 26 degrees of
+    # dump — far less than a real one throws.
     _make_hinge("boom", boom_parent, boom, boom_pin, Vector3.RIGHT,
         -1.047, 1.100, _motor_impulse(BOOM_TORQUE_LIMIT_NM))
     _make_hinge("stick", boom, stick, stick_pin, Vector3.RIGHT,
-        -2.094, 0.0, _motor_impulse(STICK_TORQUE_LIMIT_NM))
+        -2.360, 0.0, _motor_impulse(STICK_TORQUE_LIMIT_NM))
     _make_hinge("bucket", stick, bucket, bucket_pin, Vector3.RIGHT,
-        -0.698, 1.833, _motor_impulse(BUCKET_TORQUE_LIMIT_NM))
+        -1.200, 1.950, _motor_impulse(BUCKET_TORQUE_LIMIT_NM))
     var hook: Vector3 = bucket.to_global(BUCKET_TIP)
-    var is_free_object := case_name.begins_with("push_") or case_name.begins_with("roll_")
+    var is_free_object := fit_ground_handling_toe and (
+        case_name.begins_with("push_") or case_name.begins_with("roll_"))
     if is_free_object:
         # Real collision toe attached to the rigid bucket; contacts originate
         # in Jolt and the load never receives scripted movement.
@@ -373,8 +396,16 @@ func _desired_joint_velocity(id: String) -> float:
     # term whose sign did not follow this angle's convention, so it added to
     # the error instead of opposing it: the boom both hunted at rest and
     # stalled short of its target with the motor commanding the wrong way.
-    var rate := (measured - float(h.get("last_angle", measured))) * float(
+    # Smoothed over about four ticks. A single tick's difference at 120 Hz
+    # multiplies solver noise by 120, and once the arm cylinders were given
+    # enough torque to hold their band the damping term rode that noise: the
+    # boom buzzed at rest, reversing direction on all but one of 600 samples
+    # instead of settling. The lag this adds is small enough that full lift
+    # still arrives inside the 3 s the feel regression allows.
+    var raw_rate := (measured - float(h.get("last_angle", measured))) * float(
         Engine.physics_ticks_per_second)
+    var rate: float = lerpf(float(h.get("rate", raw_rate)), raw_rate, 0.25)
+    h["rate"] = rate
     h["last_angle"] = measured
     # Hold still once the link is there. A velocity-mode motor commanded to
     # zero brakes the joint, which is what holding a boom out needs; without
@@ -382,8 +413,15 @@ func _desired_joint_velocity(id: String) -> float:
     # boom visibly bounces with no operator input.
     if absf(error) < 0.006 and absf(rate) < 0.10:
         return 0.0
-    return clampf(3.4 * error - 1.10 * rate,
+    var wanted := clampf(3.4 * error - 1.10 * rate,
         -float(h["max_speed"]), float(h["max_speed"]))
+    # Cushion the last of the stroke, the way a real cylinder does. A
+    # velocity-mode motor otherwise reaches a hard stop at full speed, and that
+    # impact is what pulled the pins apart once the bands were widened and the
+    # damping term smoothed: 136 mm at the bucket against a 40 mm limit.
+    var band := joint_limits(id)
+    var head_room: float = (band.y - measured) if wanted > 0.0 else (measured - band.x)
+    return wanted * clampf(head_room / CUSHION_RAD, 0.0, 1.0)
 
 # Static gravity moment about a pin, taken from the bodies' real masses and
 # their actual horizontal lever arms. This replaced three constants tuned to
@@ -436,7 +474,23 @@ func _drive_hydraulics(_delta: float) -> void:
         joint.set_param(HingeJoint3D.PARAM_MOTOR_TARGET_VELOCITY,
             -float(hydraulic_state["speeds"][id]))
         joint.set_param(HingeJoint3D.PARAM_MOTOR_MAX_IMPULSE,
-            float(hydraulic_state["torque_caps"][id]) / float(Engine.physics_ticks_per_second))
+            float(hydraulic_state["torque_caps"][id]) * _relief_fraction(id)
+                / float(Engine.physics_ticks_per_second))
+
+# A service that is commanded but not moving is against something it cannot
+# shift. On a real machine the relief valve lifts and holds the pressure
+# there; here the motor instead leant on a limb jammed in the ground at full
+# torque every tick, and the pin visibly came out of line - 221 mm at the
+# bucket across a full sweep. Easing the torque while it is stalled is what
+# the valve does, and it recovers as soon as the limb moves again.
+func _relief_fraction(id: String) -> float:
+    var h: Dictionary = hinges[id]
+    var error := absf(wrapf(float(target_angles[id]) - _joint_angle(id), -PI, PI))
+    var stalled: bool = error > 0.05 and absf(float(h.get("rate", 0.0))) < 0.06
+    var held: float = clampf(float(h.get("stall", 0.0))
+        + (0.03 if stalled else -0.10), 0.0, 1.0)
+    h["stall"] = held
+    return lerpf(1.0, RELIEF_TORQUE_FRACTION, held)
 
 func _test_phase() -> String:
     if elapsed < 2.0:

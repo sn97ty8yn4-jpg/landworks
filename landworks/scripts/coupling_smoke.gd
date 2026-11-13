@@ -60,8 +60,16 @@ func _run() -> void:
 	# Left parked, it must stand on its jockey foot rather than nose over.
 	hitch.release()
 	_stage_trailer(world,Vector3(0,0,2.5))
+	# Staging places the trailer by its drawbar ring, which puts the body
+	# 0.70 m BELOW the tractor's own origin — well under the ground. Parked
+	# from there it was not standing on its jockey foot at all, it was settling
+	# out of the terrain onto its nose, and reported the same 66 degrees every
+	# run. Drop it in from clear air instead, which is what parking it means.
+	world.trailer.global_position.y += 1.20
+	world.trailer.linear_velocity = Vector3.ZERO
+	world.trailer.angular_velocity = Vector3.ZERO
 	world._update_hitch()
-	for _n in range(240):
+	for _n in range(360):
 		await physics_frame
 	var tilt := rad_to_deg(acos(clampf(
 		world.trailer.global_transform.basis.y.dot(Vector3.UP),-1.0,1.0)))
