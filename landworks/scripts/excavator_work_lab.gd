@@ -60,6 +60,23 @@ const RELIEF_TORQUE_FRACTION := 0.30
 const SLEW_ACCEL_RADS2 := 0.35
 const TEST_END_S := 32.0
 
+# Bands in _joint_angle terms, and the pose each limb is built in. Engineering
+# choices for a machine of this class, not figures the model carries: the boom
+# sweeps 123 degrees, the arm 135, the bucket 133.
+const BOOM_BAND := Vector2(-1.047, 1.100)
+const ARM_BAND := Vector2(-2.360, 0.0)
+const BUCKET_BAND := Vector2(-1.600, 0.720)
+const BOOM_REST := 0.24
+# The arm sits in the MIDDLE of its band, derived rather than written down
+# again so the two cannot drift apart. Built at -0.72 it sat near the extend
+# end, leaving 94 degrees of crowd against 41 of extend: from the seat the
+# lever felt lopsided the same way the bucket's did before it was mirrored.
+# Moving the band instead would have overrun the modelled ram, which already
+# strokes its full 1.793 to 2.529 m across these limits, so the pose is what
+# changed. It parks the arm more folded than a real machine usually stands.
+const ARM_REST := (ARM_BAND.x + ARM_BAND.y) * 0.5
+const BUCKET_REST := -0.24
+
 var case_name := "lift_500"
 var output_dir := ""
 var batch := false
@@ -239,24 +256,21 @@ func _build_machine() -> void:
         dozer_blade.collision_mask = 3
         _make_hinge("blade", undercarriage, dozer_blade, BLADE_PIN, Vector3.RIGHT,
             -0.314, 0.314, _motor_impulse(BLADE_TORQUE_LIMIT_NM))
-    boom = _make_box("Boom_650kg", 650.0, boom_pin, 0.24,
+    # Each limb is built at its own rest angle, and those are cumulative: a
+    # body's rotation is its parent's plus its own joint angle.
+    boom = _make_box("Boom_650kg", 650.0, boom_pin, BOOM_REST,
         BOOM_LENGTH, 0.46, 0.46, Color("#f08820"))
     var stick_pin: Vector3 = boom.to_global(Vector3(0, 0, -BOOM_LENGTH))
-    stick = _make_box("Stick_400kg", 400.0, stick_pin, -0.48,
+    stick = _make_box("Stick_400kg", 400.0, stick_pin, BOOM_REST + ARM_REST,
         STICK_LENGTH, 0.34, 0.34, Color("#e97a17"))
     var bucket_pin: Vector3 = stick.to_global(Vector3(0, 0, -STICK_LENGTH))
-    bucket = _make_box("Bucket_300kg", 300.0, bucket_pin, -0.72,
+    bucket = _make_box("Bucket_300kg", 300.0, bucket_pin,
+        BOOM_REST + ARM_REST + BUCKET_REST,
         BUCKET_LENGTH, 0.44, BUCKET_WIDTH, Color("#42494a"))
-    # Bands in _joint_angle terms, where the limbs rest at boom +0.24, arm
-    # -0.72 and bucket -0.24. Engineering choices for a machine of this class,
-    # not figures the model carries: boom 123 degrees, arm 135, bucket 180.
-    # The arm and the bucket are wider than the first pass, which gave the arm
-    # 120 degrees and the bucket 145 and left the bucket only 26 degrees of
-    # dump — far less than a real one throws.
     _make_hinge("boom", boom_parent, boom, boom_pin, Vector3.RIGHT,
-        -1.047, 1.100, _motor_impulse(BOOM_TORQUE_LIMIT_NM))
+        BOOM_BAND.x, BOOM_BAND.y, _motor_impulse(BOOM_TORQUE_LIMIT_NM))
     _make_hinge("stick", boom, stick, stick_pin, Vector3.RIGHT,
-        -2.360, 0.0, _motor_impulse(STICK_TORQUE_LIMIT_NM))
+        ARM_BAND.x, ARM_BAND.y, _motor_impulse(STICK_TORQUE_LIMIT_NM))
     # Curl is the NEGATIVE direction here, measured at the bucket pin: from
     # rest the angle between the tooth and the arm closes from 132 to 83
     # degrees going down, and opens going up. The band was the wrong way
@@ -270,7 +284,12 @@ func _build_machine() -> void:
     # out of line. At -1.60 it settles around -1.10, closing the bucket from
     # 135 degrees between tooth and arm to 60, and the pin stays in line.
     _make_hinge("bucket", stick, bucket, bucket_pin, Vector3.RIGHT,
-        -1.600, 0.720, _motor_impulse(BUCKET_TORQUE_LIMIT_NM))
+        BUCKET_BAND.x, BUCKET_BAND.y, _motor_impulse(BUCKET_TORQUE_LIMIT_NM))
+    # Hold each service where it was built, so nothing moves before the
+    # operator asks. The parent class's defaults describe its own lab geometry.
+    target_angles["boom"] = BOOM_REST
+    target_angles["stick"] = ARM_REST
+    target_angles["bucket"] = BUCKET_REST
     var hook: Vector3 = bucket.to_global(BUCKET_TIP)
     var is_free_object := fit_ground_handling_toe and (
         case_name.begins_with("push_") or case_name.begins_with("roll_"))
@@ -569,9 +588,9 @@ func _physics_process(delta: float) -> void:
     # push, drag or roll along the ground without being lifted clear.
     var handling := case_name in GROUND_HANDLING_CASES
     var lift_frac := 0.0 if handling else smoothstep(2.0, 10.0, elapsed)
-    target_angles["boom"] = 0.24 + 0.48 * lift_frac
-    target_angles["stick"] = -0.72 + 0.10 * lift_frac
-    target_angles["bucket"] = -0.24 - 0.12 * lift_frac
+    target_angles["boom"] = BOOM_REST + 0.48 * lift_frac
+    target_angles["stick"] = ARM_REST + 0.10 * lift_frac
+    target_angles["bucket"] = BUCKET_REST - 0.12 * lift_frac
     _drive_hydraulics(delta)
     # Explicit ground handling does NOT depend on lifting capability.
     # The separate failed-lift test remains stationary by test design.

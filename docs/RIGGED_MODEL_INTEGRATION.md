@@ -427,15 +427,32 @@ pulls 0.385 m against a 30 kN load, where before it managed 0.05. That pull is
 gated now, and raising the friction alone would have done nothing for it,
 because the gain is what binds.
 
-**The stick measures correct**, which is the awkward part of this round: from
-where it sits it reaches −2.306 of a −2.360 stop and −0.092 of a 0.000 stop,
-three and five degrees short, with reach spanning 2.75 to 5.35 m. Whatever is
-wrong in play is not the joint failing to reach its band. What the numbers do
-show is that the parked pose sits near the extend end: from rest there are 94
-degrees of crowd and only 41 of extend, so the lever feels lopsided in exactly
-the way the bucket's did. That is the modelled ram's whole stroke, so moving
-the band would overrun it; the pose the arm is built in is the thing that
-would have to change, and that is not a guess worth making twice.
+**The stick measured correct**, which was the awkward part: from where it sat
+it reached −2.306 of a −2.360 stop and −0.092 of a 0.000 stop, three and five
+degrees short. The joint was not failing to reach its band. What the numbers
+did show is that the parked pose sat near the extend end — **94 degrees of
+crowd against 41 of extend** — so the lever felt lopsided in exactly the way
+the bucket's had. Moving the band would overrun the modelled ram, which
+already strokes its full 1.793 to 2.529 m across those limits, so the pose the
+arm is *built* in is what changed.
+
+### Rebalancing the arm's rest pose
+
+The arm is now built at the middle of its own band, derived from it rather
+than written down a second time, so the two cannot drift apart. The limbs'
+build angles are cumulative, so the bucket's moved with it to keep its own
+rest. Measured after: **67 degrees of crowd against 68 of extend**, both stops
+still reached within two and four degrees, the reach envelope unchanged at
+3.01 to 7.30 m from the swing centre, and the bucket still parked on the
+ground. It does leave the arm standing more folded than a real machine usually
+parks, which is the price of an even lever.
+
+That broke `reset_smoke`, and interestingly not by misfiring: with the arm
+resting more folded the bucket settles into the hole it has just dug and cuts
+about 40 litres more. The check had been reading 2 seconds of that as though
+the teleport had been committed as a cut. It now measures the jump itself over
+the ticks either side — **0.0000019 m³**, against a limit of 0.002 it keeps —
+and allows settling afterwards under a separate, looser limit.
 
 ### What did not matter
 
