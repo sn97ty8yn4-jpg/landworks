@@ -24,7 +24,15 @@ const BLADE_PIN := Vector3(0.0, 0.30, -0.62)
 const BLADE_TORQUE_LIMIT_NM := 42000.0
 const OFFSET_TORQUE_LIMIT_NM := 30000.0
 const TRACK_MACHINE_MASS_KG := 8170.0
-const TRACK_SPEED_FEEDBACK_N_PER_MPS := 24000.0
+# Raised from 24000. At full command that gain produced only about 6.9 kN per
+# contact patch, 28 kN across the machine, while 45 kN of grip sat unused
+# underneath: the speed controller was the limit on traction, not the ground,
+# and drawbar pull measured 30 kN where a machine of this weight should manage
+# 60 or more. 60000 was tried first and went too far — it makes a very stiff
+# spring about zero, and the boom then never reached full lift inside the 3 s
+# the feel regression allows, taking 7.5. At 36000 the boom is back to 2.7 s
+# and the machine still pulls hard against 30 kN.
+const TRACK_SPEED_FEEDBACK_N_PER_MPS := 36000.0
 const TRACK_LATERAL_SKID_N_PER_MPS := 1900.0
 # How much of a contact patch's grip resists sideways slip. A rubber track
 # holds far better along its length than across it, which is what lets the

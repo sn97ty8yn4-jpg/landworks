@@ -396,6 +396,47 @@ not where the weightlessness shows, so it stays direct. Lift still takes
 2.7 s, slightly up from 2.3, because the machine is now planted enough to
 work against.
 
+## Traction, and "is it running an older version?"
+
+Asked after a third round of play, with the stick still not right and traction
+still low. It was not an older version, and that was worth establishing rather
+than assuming: the desktop shortcut resolves to this project's
+`PLAY_WINDOWS.bat`, there is no exported `.pck`, `.exe` or ZIP anywhere in the
+tree, the one other folder that looks like a copy holds no project file, and
+the launcher's own import log was written one minute after the last commit.
+The sandbox now prints a `LANDWORKS_BUILD` line at startup with the joint
+bands, the sideways grip and the control pattern it is actually running, so
+the question is answerable from the first lines of the log in future.
+
+**Traction was genuinely low, and never touched before.** The earlier work
+changed only the *sideways* resistance. Measured drawbar pull — drive flat out
+against a rising rearward load and find where it stalls — was **30 kN**, about
+0.35 of the machine's weight, where a machine of this class manages 0.7 to
+0.8. The cause was not the ground: at full command the speed controller's gain
+produced 6.9 kN per contact patch, 28 kN across the machine, while 45 kN of
+grip sat unused underneath it. The gain is the limit, not the friction clamp it
+is supposed to run into. Raised, and `track_mu` on hardpack went from 0.56 to
+0.78, a more honest figure for a grousered rubber track on compacted ground.
+
+The gain was taken to 60000 first and that went too far. It makes a very stiff
+spring about zero, and the boom then never reached full lift inside the three
+seconds the feel regression allows — 7.5 s against 2.7 before. Bisecting the
+two changes showed the friction alone was harmless (2.375 s) and the gain was
+the whole cause. At 36000 the boom is back to 2.7 s and the machine still
+pulls 0.385 m against a 30 kN load, where before it managed 0.05. That pull is
+gated now, and raising the friction alone would have done nothing for it,
+because the gain is what binds.
+
+**The stick measures correct**, which is the awkward part of this round: from
+where it sits it reaches −2.306 of a −2.360 stop and −0.092 of a 0.000 stop,
+three and five degrees short, with reach spanning 2.75 to 5.35 m. Whatever is
+wrong in play is not the joint failing to reach its band. What the numbers do
+show is that the parked pose sits near the extend end: from rest there are 94
+degrees of crowd and only 41 of extend, so the lever feels lopsided in exactly
+the way the bucket's did. That is the modelled ram's whole stroke, so moving
+the band would overrun it; the pose the arm is built in is the thing that
+would have to change, and that is not a guess worth making twice.
+
 ### What did not matter
 
 Three things were tried against the bucket pin separating and measured

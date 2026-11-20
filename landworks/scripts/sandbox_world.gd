@@ -141,6 +141,14 @@ func _ready() -> void:
             "crawler_move_m", "crate_move_m", "boom_delta_deg", "hitch_error_m",
             "chassis_tilt_deg", "hydraulic_pressure_mpa", "track_contacts"]))
     print("LANDWORKS_SANDBOX_READY tractors=1 excavators=1 trailer=1 props=", props.size()+1)
+    # Print the tuning the machine is actually running with. Asked once whether
+    # the game was opening an older copy, there was no way to tell from the
+    # game itself; now the first lines of the log say which build it is.
+    print("LANDWORKS_BUILD boom=", digger.joint_limits("boom"),
+        " arm=", digger.joint_limits("stick"),
+        " bucket=", digger.joint_limits("bucket"),
+        " lateral_grip=", digger.LATERAL_GRIP_FRACTION,
+        " control=", "ISO" if not digger.sae_pattern else "SAE")
 
 func _out(filename: String) -> String:
     return "user://" + filename if smoke_out == "" else smoke_out.path_join(filename)

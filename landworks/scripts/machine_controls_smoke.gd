@@ -196,6 +196,26 @@ func _run() -> void:
 	print("STEADY_PUSH moved_m=", String.num(shoved, 3))
 	check(shoved < 0.25,
 		"A steady 3400 N shoved the machine %.2f m in five seconds" % shoved)
+	# 5d. Drawbar pull. The speed controller used to be the limit on traction
+	# rather than the ground: at full command it produced 28 kN across the
+	# machine while 45 kN of grip sat unused, and the machine stalled against
+	# a 30 kN load. It should lean on the ground, not on its own gain.
+	digger.scripted_test = true
+	digger.access_test = true
+	await _settle(120)
+	var pull_from: Vector3 = digger.undercarriage.global_position
+	var pull_forward: Vector3 = -digger.undercarriage.global_transform.basis.z
+	for _n in range(300):
+		digger.undercarriage.apply_central_force(-pull_forward * 30000.0)
+		await physics_frame
+	var pulled: float = (digger.undercarriage.global_position - pull_from).dot(pull_forward)
+	print("DRAWBAR against_30kN_m=", String.num(pulled, 3))
+	check(pulled > 0.20,
+		"The machine cannot pull against 30 kN: %+.2f m in 2.5 s" % pulled)
+	digger.scripted_test = false
+	digger.access_test = false
+	await _settle(120)
+
 	# ...and must still be able to drive itself out of its own tracks.
 	await _settle(120)
 	var parked: Vector3 = digger.undercarriage.global_position

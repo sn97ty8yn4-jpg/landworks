@@ -5,7 +5,11 @@
 extends RefCounted
 
 const PROFILES := {
-    "hardpack": {"object_mu": 0.43, "track_mu": 0.56,
+    # track_mu was 0.56 on hardpack, which is low for a grousered rubber track
+    # on compacted ground and held drawbar pull to roughly half of what this
+    # machine's weight should give. The ordering against the clays, which the
+    # hydraulic smoke test asserts, is unchanged.
+    "hardpack": {"object_mu": 0.43, "track_mu": 0.78,
         "rolling_coefficient": 0.014, "sinkage_drag_n": 0.0,
         "name": "Compacted farm track"},
     "soft_clay": {"object_mu": 0.68, "track_mu": 0.38,
