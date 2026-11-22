@@ -35,8 +35,18 @@ const TRACK_MACHINE_MASS_KG := 8170.0
 const TRACK_SPEED_FEEDBACK_N_PER_MPS := 36000.0
 const TRACK_LATERAL_SKID_N_PER_MPS := 1900.0
 # How much of a contact patch's grip resists sideways slip. A rubber track
-# holds far better along its length than across it, which is what lets the
+# holds better along its length than across it, which is what lets the
 # machine pivot on the spot; at 1.0 it could not neutral-turn at all.
+#
+# DO NOT RAISE THIS TO FIX BEING PUSHED BY THE TRACTOR. It was tried at 0.55
+# on exactly that reasoning — 0.18 leaves only 11.25 kN of sideways grip,
+# 0.137 of the machine's own weight — and a tractor driving into the machine
+# then bulldozed it 9.0 to 13.1 m instead of 7.9 to 8.0 m. Three times the
+# grip, measurably worse, because a larger sideways demand takes the whole
+# friction circle and crowds out the drive that was resisting. Steady pushes
+# did not change at all (10 kN still moves it 43 mm either way), since they
+# never approach the budget. The sustained push is contact resolution, not a
+# grip shortfall.
 const LATERAL_GRIP_FRACTION := 0.18
 const BOOM_TORQUE_LIMIT_NM := 75000.0  # engineering starting assumption, NOT OEM value
 # Both were tried higher — 60000 and 28000 — on the theory that the arm and
@@ -48,6 +58,13 @@ const BUCKET_TORQUE_LIMIT_NM := 20000.0
 const SLEW_TORQUE_LIMIT_NM := 25000.0
 # How far out from a stop a service starts easing off, in radians.
 const CUSHION_RAD := 0.22
+# The speed a joint is always allowed toward its own stop, so sitting on the
+# stop is possible at all. Slow enough that it cannot slam into one.
+const HOLD_SPEED_RADS := 0.06
+# How close to its own stop a joint stops being driven and is simply braked.
+# Narrow enough that the operator cannot see the travel it gives up, wide
+# enough that gravity cannot sag the joint back out of it.
+const STOP_BRAKE_RAD := 0.025
 # How far a lever's target may lead the angle the joint has actually reached.
 const LEAD_RAD := 0.35
 # What fraction of its torque a fully stalled service holds, standing in for
@@ -124,6 +141,8 @@ var initial_payload_mass := 500.0
 var max_base_yaw_deg := 0.0
 var last_track_left_force_n := 0.0
 var last_track_right_force_n := 0.0
+var last_track_lateral_force_n := 0.0
+var last_track_slip_mps := Vector2.ZERO
 var start_base_xz := Vector2.ZERO
 var max_base_planar_displacement_m := 0.0
 var surface_profile: Dictionary = {}
@@ -394,11 +413,18 @@ func _drive_tracks(target_left: float, target_right: float) -> void:
     ground_contact_count = 0
     last_track_left_force_n = 0.0
     last_track_right_force_n = 0.0
+    last_track_lateral_force_n = 0.0
+    last_track_slip_mps = Vector2.ZERO
     var track_speed_commands := [target_left, target_right]
     for index in range(2):
         var side := -1.0 if index == 0 else 1.0
         var requested: float = track_speed_commands[index]
+        # Each patch keeps what it is standing on, so the force it applies can
+        # be answered on whatever that is — Newton's third law, which a
+        # ray-cast contact does not get for free.
         var contact_positions: Array[Vector3] = []
+        var contact_supports: Array = []
+        var contact_points: Array[Vector3] = []
         for z in [-1.08, 1.08]:
             var local := Vector3(0.86 * side, 0.23, z)
             var ray_origin: Vector3 = undercarriage.to_global(local)
@@ -408,6 +434,8 @@ func _drive_tracks(target_left: float, target_right: float) -> void:
             var hit := get_world_3d().direct_space_state.intersect_ray(query)
             if not hit.is_empty():
                 contact_positions.append(local)
+                contact_supports.append(hit["collider"])
+                contact_points.append(Vector3(hit["position"]))
         var contacts := contact_positions.size()
         ground_contact_count += contacts
         if contacts == 0:
@@ -422,14 +450,41 @@ func _drive_tracks(target_left: float, target_right: float) -> void:
             carried_mass_kg = initial_payload_mass
         var side_normal_n := (TRACK_MACHINE_MASS_KG + carried_mass_kg) * 9.81 * 0.5
         var per_patch_mu_n := float(surface_profile["track_mu"]) * side_normal_n / 2.0
-        for local in contact_positions:
+        for patch in range(contact_positions.size()):
+            var local: Vector3 = contact_positions[patch]
             var arm: Vector3 = basis * local
             var point_velocity: Vector3 = undercarriage.linear_velocity + undercarriage.angular_velocity.cross(arm)
             var longitudinal_mps := point_velocity.dot(forward)
             var lateral_mps := point_velocity.dot(right)
-            var drive_n := clampf(
-                (requested - longitudinal_mps) * TRACK_SPEED_FEEDBACK_N_PER_MPS / float(contacts),
-                -per_patch_mu_n, per_patch_mu_n)
+            # ALONG the track, ask for the force that brings this patch to the
+            # commanded speed inside one tick, and let the grip budget below
+            # be what limits it. This is the same standing-friction treatment
+            # the sideways direction was given — and the reason it had to be
+            # given here too is that the gate which proved the sideways fix
+            # pushed along basis.x only, so the direction a tractor actually
+            # shoves from was never measured. A gain of 36000 N per m/s is a
+            # dashpot, not friction: it resists a fast slide and almost
+            # nothing slow, so any steady force at all slid the machine at a
+            # steady speed. 10 kN leaning on it moved it 0.538 m in five
+            # seconds where the same force sideways moved it 0.044 m, and a
+            # tractor at 12 km/h shunted 8.4 tonnes 11.7 m.
+            #
+            # The old gain stays as the floor so a commanded crawl is not
+            # slower than it was: below it, grip is doing the work anyway.
+            # The mass share has to be the mass of the body the force is
+            # applied to, not the machine's whole 8.17 tonnes. Using the whole
+            # machine made the four patches together ask for 980 kN per m/s
+            # against a 2200 kg undercarriage — 3.7 times what cancels its
+            # velocity in a tick — so instead of gripping it overshot every
+            # tick and the machine juddered: commanded to drive, it managed
+            # 0.47 m in five seconds. With the undercarriage's own mass the
+            # four patches exactly cancel its slip and nothing overshoots.
+            var patch_mass: float = undercarriage.mass / float(contacts * 2)
+            var slip: float = requested - longitudinal_mps
+            var drive_n := clampf(maxf(
+                absf(slip) * patch_mass * float(Engine.physics_ticks_per_second),
+                absf(slip) * TRACK_SPEED_FEEDBACK_N_PER_MPS / float(contacts)),
+                0.0, per_patch_mu_n) * signf(slip)
             # Sideways sliding of a rubber track is resisted, but not welded
             # to the ground. The front/rear patch arms create realistic
             # turning scrub and help damp yaw oscillations.
@@ -454,7 +509,22 @@ func _drive_tracks(target_left: float, target_right: float) -> void:
             var combined := Vector2(drive_n, lateral_n)
             if combined.length() > per_patch_mu_n:
                 combined *= per_patch_mu_n / combined.length()
-            undercarriage.apply_force(forward * combined.x + right * combined.y, arm)
+            var patch_force: Vector3 = forward * combined.x + right * combined.y
+            undercarriage.apply_force(patch_force, arm)
+            # Whatever the track is gripping against is pushed back. Static
+            # ground does not care; a machine or trailer under the track does.
+            var support = contact_supports[patch]
+            if support is RigidBody3D:
+                support.apply_force(-patch_force,
+                    contact_points[patch] - support.global_position)
+            # Sideways grip and the slip it is answering, totalled over every
+            # patch. Reported because the longitudinal figures alone cannot
+            # tell you whether a machine being shoved off line is short of
+            # grip or short of contact, and that was guessed at twice.
+            last_track_lateral_force_n += combined.y
+            last_track_slip_mps = Vector2(
+                last_track_slip_mps.x + longitudinal_mps / float(contacts * 2),
+                last_track_slip_mps.y + lateral_mps / float(contacts * 2))
             if index == 0:
                 last_track_left_force_n += combined.x
             else:
@@ -497,7 +567,27 @@ func _desired_joint_velocity(id: String) -> float:
     # damping term smoothed: 136 mm at the bucket against a 40 mm limit.
     var band := joint_limits(id)
     var head_room: float = (band.y - measured) if wanted > 0.0 else (measured - band.x)
-    return wanted * clampf(head_room / CUSHION_RAD, 0.0, 1.0)
+    # Cushion the last of the stroke by CAPPING the speed toward the stop,
+    # not by scaling the whole command down.
+    #
+    # Scaling it drove the command to zero at the band edge, so the joint sagged
+    # out of the stop under gravity, the cushion reopened, the motor drove it
+    # back in and it zeroed again: held up, the boom chattered +/-0.035 rad at
+    # about 2 Hz for as long as the lever was held, and never settled. That is
+    # what "the boom up lift is unpredictable" was. The floor is what makes it
+    # work: a joint already at its stop must still be allowed the small
+    # velocity that holds it there, after which the deadband above brakes it.
+    # Sitting on the stop, BRAKE rather than keep driving into it. A velocity
+    # motor commanded to zero holds the joint, which is what a cylinder on its
+    # end stop does; the speed floor alone only made the sag-and-re-drive
+    # cycle smaller (+/-0.035 rad became +/-0.006, still 2 Hz), because the
+    # error at the stop never falls inside the settling deadband above.
+    if head_room < STOP_BRAKE_RAD:
+        return 0.0
+    var speed_cap: float = maxf(
+        float(h["max_speed"]) * clampf(head_room / CUSHION_RAD, 0.0, 1.0),
+        HOLD_SPEED_RADS)
+    return minf(wanted, speed_cap) if wanted > 0.0 else maxf(wanted, -speed_cap)
 
 # Static gravity moment about a pin, taken from the bodies' real masses and
 # their actual horizontal lever arms. This replaced three constants tuned to

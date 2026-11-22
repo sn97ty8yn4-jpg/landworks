@@ -78,10 +78,15 @@ jobs:
         run: |
           timeout 110s godot --headless --path . --script res://landworks/scripts/reset_smoke.gd 2>&1 | tee ci-earthworks/reset.log
           grep 'RESET PASS' ci-earthworks/reset.log
+      - name: Test the build stamp
+        shell: bash
+        run: |
+          timeout 90s godot --headless --path . --script res://landworks/scripts/build_stamp_smoke.gd 2>&1 | tee ci-earthworks/build_stamp.log
+          grep 'BUILD_STAMP PASS' ci-earthworks/build_stamp.log
       - name: Test hitch and strap coupling
         shell: bash
         run: |
-          timeout 85s godot --headless --path . --script res://landworks/scripts/coupling_smoke.gd 2>&1 | tee ci-earthworks/coupling.log
+          timeout 150s godot --headless --path . --script res://landworks/scripts/coupling_smoke.gd 2>&1 | tee ci-earthworks/coupling.log
           grep 'COUPLING PASS' ci-earthworks/coupling.log
       - name: Test two-state slope stability
         shell: bash

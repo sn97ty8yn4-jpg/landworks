@@ -209,9 +209,42 @@ func _run() -> void:
 			digger.undercarriage.global_transform.basis.x * 3400.0)
 		await physics_frame
 	var shoved: float = stood.distance_to(digger.undercarriage.global_position)
-	print("STEADY_PUSH moved_m=", String.num(shoved, 3))
+	print("STEADY_PUSH sideways moved_m=", String.num(shoved, 3))
 	check(shoved < 0.25,
-		"A steady 3400 N shoved the machine %.2f m in five seconds" % shoved)
+		"A steady 3400 N sideways shoved the machine %.2f m in five seconds" % shoved)
+
+	# 5c-ii. The SAME push along the tracks, which is the direction a tractor
+	# shoves from and the one this check never tested. basis.x only ever
+	# measured sideways, so the longitudinal resistance stayed purely viscous
+	# long after the sideways one was fixed: 10 kN along the tracks slid the
+	# machine 0.538 m where the same force sideways moved it 0.044 m. Both
+	# directions are measured now, and at the larger force, because 3400 N
+	# alone was not enough to tell a dashpot from friction.
+	for probe in [["sideways", Vector3.RIGHT], ["along_tracks", Vector3.FORWARD]]:
+		world.reset_machines()
+		await _settle(420)
+		digger.target_angles["boom"] = 0.24
+		await _settle(300)
+		var from: Vector3 = digger.undercarriage.global_position
+		var axis: Vector3 = digger.undercarriage.global_transform.basis * Vector3(probe[1])
+		for _n in range(600):
+			digger.undercarriage.apply_central_force(axis.normalized() * 10000.0)
+			await physics_frame
+		var slid: float = from.distance_to(digger.undercarriage.global_position)
+		print("STEADY_PUSH_10KN %-13s moved_m=%s" % [str(probe[0]), String.num(slid, 3)])
+		# 0.20 m, not tighter, and the reason is in the scheme rather than the
+		# grip: the arrest force is computed from last tick's slip, so a
+		# force that keeps being re-applied always wins one tick of creep.
+		# Sideways manages 0.044 m only because its budget is small enough to
+		# clamp, which makes it true Coulomb friction; along the tracks the
+		# budget is six times larger and never clamps under this load, so it
+		# settles at a viscous equilibrium of about 0.14 m. It was 0.538 m.
+		check(slid < 0.20, "A steady 10 kN %s slid the machine %.3f m in five seconds" % [
+			str(probe[0]), slid])
+	world.reset_machines()
+	await _settle(420)
+	digger.target_angles["boom"] = 0.24
+	await _settle(300)
 	# 5d. Drawbar pull. The speed controller used to be the limit on traction
 	# rather than the ground: at full command it produced 28 kN across the
 	# machine while 45 kN of grip sat unused, and the machine stalled against
@@ -284,6 +317,48 @@ func _run() -> void:
 		world.trailer.wheel_visuals[0].rotation.x, turned_before))
 	print("TRAILER_WHEELS rolled_rad=", String.num(rolled, 3))
 	check(rolled > 0.08, "The trailer wheels do not turn when it rolls")
+
+	# 9. Holding the boom lever up must settle, not chatter. The cushion that
+	# softens the last of the stroke used to SCALE the whole motor command, so
+	# at the top of the band the command reached zero, the boom sagged out of
+	# the stop under gravity, the cushion reopened and it drove back in: held
+	# up, it oscillated +/-0.035 rad at about 2 Hz for as long as the lever was
+	# held and never settled. That is what "the boom lift is unpredictable"
+	# was. Measured as the swing left in the last second and a half of a long
+	# hold, which is the part a player sees as a twitching boom.
+	world.reset_machines()
+	await _settle(420)
+	var boom_band: Vector2 = digger.joint_limits("boom")
+	var tail_low := INF
+	var tail_high := -INF
+	var reversals := 0
+	var previous: float = digger._joint_angle("boom")
+	var direction := 0.0
+	for n in range(720):
+		digger._advance_target("boom", 1.2 / 120.0)
+		await physics_frame
+		var now: float = digger._joint_angle("boom")
+		if n > 540:
+			tail_low = minf(tail_low, now)
+			tail_high = maxf(tail_high, now)
+			var step: float = now - previous
+			if absf(step) > 0.0005:
+				if direction != 0.0 and signf(step) != direction:
+					reversals += 1
+				direction = signf(step)
+		previous = now
+	var swing: float = tail_high - tail_low
+	var topped: float = boom_band.y - tail_high
+	print("BOOM_HOLD tail_swing_rad=", String.num(swing, 4),
+		" reversals=", reversals, " short_of_top_rad=", String.num(topped, 3))
+	# 0.055 rad. The swing measured 0.040 rad here after the two changes
+	# above; this holds that and catches it getting worse. It is NOT the
+	# number it ought to be — a boom held at its stop should be still, and
+	# about +/-0.02 rad at 2 Hz is left.
+	check(swing < 0.055,
+		"Held up, the boom still swings %.3f rad at the top of its band" % swing)
+	check(topped < 0.12,
+		"Holding the lever up left the boom %.3f rad short of its band" % topped)
 
 	for failure in failures: push_error(failure)
 	print("MACHINE_CONTROLS ", "PASS" if failures.is_empty() else "FAIL")

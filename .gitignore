@@ -21,3 +21,7 @@ validation/
 
 # Desktop shortcuts hold absolute paths for one machine only.
 *.lnk
+
+# Written by tools/windows/STAMP_BUILD.ps1 when packaging an export; a
+# checkout reads its build straight out of .git instead.
+landworks/build_stamp.txt

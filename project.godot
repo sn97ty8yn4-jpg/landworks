@@ -3,6 +3,8 @@ config_version=5
 
 [application]
 config/name="Landworks Machinery Sandbox"
+; Held equal to BuildInfo.VERSION by build_stamp_smoke.
+config/version="0.9.0"
 run/main_scene="res://landworks/scenes/sandbox_world.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 

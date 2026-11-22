@@ -16,6 +16,7 @@ const RIGGED_ART = preload("res://landworks/scripts/rigged_machine_art.gd")
 const COUPLER = preload("res://landworks/scripts/coupler.gd")
 const PAD = preload("res://landworks/scripts/pad_bindings.gd")
 const PAD_SETUP = preload("res://landworks/scripts/pad_setup_screen.gd")
+const BUILD = preload("res://landworks/scripts/build_info.gd")
 const TRACTOR_HITCH_LOCAL := Vector3(0, -0.20, 1.30)
 
 const SMOKE_DURATION_S := 21.0
@@ -31,6 +32,7 @@ var props: Array[RigidBody3D] = []
 var prop_surfaces: Dictionary = {}
 var camera: Camera3D
 var status: Label
+var build_label: Label
 var active_machine := 0
 var toggle_down := false
 var legacy_down := false
@@ -151,6 +153,14 @@ func _ready() -> void:
     # Print the tuning the machine is actually running with. Asked once whether
     # the game was opening an older copy, there was no way to tell from the
     # game itself; now the first lines of the log say which build it is.
+    # The title bar carries it too, so the build is readable from the taskbar
+    # without the game having focus — and from a screenshot of the window.
+    if not smoke and DisplayServer.get_name() != "headless":
+        get_window().title = "%s  —  %s" % [
+            ProjectSettings.get_setting("application/config/name", "Landworks"),
+            BUILD.describe()]
+    print("LANDWORKS_VERSION ", BUILD.describe(), " (read from ",
+        BUILD.source(), ")")
     print("LANDWORKS_BUILD boom=", digger.joint_limits("boom"),
         " arm=", digger.joint_limits("stick"),
         " bucket=", digger.joint_limits("bucket"),
@@ -372,6 +382,24 @@ func _build_ui() -> void:
     status.add_theme_font_size_override("font_size",17)
     status.add_theme_color_override("font_color",Color("#fff3dc"))
     canvas.add_child(status)
+    # Which build this is, in the top-right corner where it is always on
+    # screen. Anchored rather than placed, so it stays in the corner at any
+    # window size, and outlined rather than panelled, so it reads over sky,
+    # soil or machine without another slab of glass in the way.
+    build_label = Label.new()
+    build_label.name = "BuildVersion"
+    build_label.text = BUILD.describe()
+    build_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+    build_label.offset_left = -430
+    build_label.offset_right = -18
+    build_label.offset_top = 14
+    build_label.offset_bottom = 38
+    build_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+    build_label.add_theme_font_size_override("font_size",14)
+    build_label.add_theme_color_override("font_color",Color("#e8f0ea"))
+    build_label.add_theme_color_override("font_outline_color",Color(0,0,0,0.85))
+    build_label.add_theme_constant_override("outline_size",5)
+    canvas.add_child(build_label)
     help_panel = ColorRect.new()
     help_panel.name = "ControlsHelp"
     help_panel.color = Color(0.035,0.075,0.074,0.91)

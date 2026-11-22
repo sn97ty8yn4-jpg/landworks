@@ -179,8 +179,16 @@ func _physics_process(delta: float) -> void:
 		# Unpowered free-rolling wheels: resistance, not an invented drive motor.
 		var longitudinal_drag := clampf(-longitudinal_speed * 68.0,
 			-friction_cap, friction_cap)
-		apply_force(Vector3.UP * spring_force + sideways * lateral_force + forward * longitudinal_drag,
-			point_offset)
+		var wheel_force: Vector3 = Vector3.UP * spring_force \
+			+ sideways * lateral_force + forward * longitudinal_drag
+		apply_force(wheel_force, point_offset)
+		# Newton's third law: a ray-cast wheel resting on another body must
+		# push that body back, or it makes force out of nothing. On static
+		# ground this changes nothing; parked on a machine it stops the
+		# trailer levitating off it.
+		var support = hit["collider"]
+		if support is RigidBody3D:
+			support.apply_force(-wheel_force, hit["position"] - support.global_position)
 		wheel_visuals[i].rotate_x(longitudinal_speed * delta / wheel_radius)
 
 func _support_on_jockey() -> void:

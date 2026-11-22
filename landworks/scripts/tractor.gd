@@ -30,6 +30,12 @@ var last_requested_hst_force_n := 0.0
 var last_hst_power_limit_n := 0.0
 var last_hst_power_kw := 0.0
 var tyre_grip_utilisation := 0.0
+# Diagnostics: the total force the wheels put into the world this tick, and
+# how many of them were standing on something that can move. Reported
+# because a ray-cast wheel resting on a rigid body is where force gets made
+# out of nothing, and that cannot be seen from the outside.
+var last_wheel_force_total_n := 0.0
+var wheels_on_rigid_body := 0
 
 # Approximate compact tractor parameters. Adjust using real dimensions and test data.
 const VEHICLE_MASS := 573.0
@@ -147,6 +153,8 @@ func _physics_process(delta: float) -> void:
         drive_limit = minf(drive_limit, HST_HYDRAULIC_BRAKING_N)
     last_requested_hst_force_n = clampf(requested_force, -drive_limit, drive_limit)
     tyre_grip_utilisation = 0.0
+    last_wheel_force_total_n = 0.0
+    wheels_on_rigid_body = 0
     for i in range(wheel_data.size()):
         var wheel: Dictionary = wheel_data[i]
         var mount: Vector3 = wheel["mount"]
@@ -172,7 +180,6 @@ func _physics_process(delta: float) -> void:
             var vertical_speed := point_velocity.dot(Vector3.UP)
             var normal_force := maxf(0.0, SPRING_RATE * compression - DAMPER_RATE * vertical_speed)
             var friction_limit := normal_force * ground_mu_override
-            apply_force(Vector3.UP * normal_force, relative)
             var longitudinal_speed := point_velocity.dot(wheel_forward)
             var lateral_speed := point_velocity.dot(wheel_right)
             var wheel_drive: float = wheel["drive_share"]
@@ -189,7 +196,24 @@ func _physics_process(delta: float) -> void:
             tyre_grip_utilisation = maxf(tyre_grip_utilisation, demand_magnitude / limit)
             if demand_magnitude > limit:
                 combined *= limit / demand_magnitude
-            apply_force(wheel_forward * combined.x + wheel_right * combined.y, relative)
+            var wheel_force: Vector3 = Vector3.UP * normal_force \
+                + wheel_forward * combined.x + wheel_right * combined.y
+            apply_force(wheel_force, relative)
+            # Newton's third law. A ray-cast wheel that pushes only itself
+            # manufactures force out of nothing the moment it is standing on
+            # something that can move: driving against the excavator's track
+            # put up to 7.6 kN per wheel of suspension force into the tractor
+            # and nothing into the machine, so 573 kg shoved 8.4 tonnes
+            # sideways at 3 m/s for as long as the throttle was held — against
+            # 11.3 kN of grip that was working perfectly. Measured at the
+            # contact: the tractor was transmitting 5-12 kN while its own
+            # drive could only ever make 2.5 kN.
+            last_wheel_force_total_n += wheel_force.length()
+            var support = hit["collider"]
+            if support is RigidBody3D:
+                wheels_on_rigid_body += 1
+                support.apply_force(-wheel_force,
+                    hit["position"] - support.global_position)
             visual.rotation.x += longitudinal_speed / maxf(rad, 0.1) * delta
         root.position = mount - Vector3(0, REST_TRAVEL - compression, 0)
     # Resist yaw only weakly when underway; wheels supply the actual turn force.

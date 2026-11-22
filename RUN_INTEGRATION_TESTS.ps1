@@ -5,6 +5,7 @@ $outputDirectory = Join-Path $PSScriptRoot 'validation/integration'
 New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
 Set-Content -LiteralPath (Join-Path $PSScriptRoot 'validation/.gdignore') -Value ''
 $cases = [ordered]@{
+    build_stamp_smoke = 'BUILD_STAMP PASS'
     detailed_skin_smoke = 'DETAILED_SKIN PASS'
     detailed_cab_smoke = 'DETAILED_CAB PASS'
     rigged_model_smoke = 'RIGGED_MODEL PASS'
