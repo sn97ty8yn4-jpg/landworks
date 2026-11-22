@@ -59,10 +59,35 @@ func _joint_angle(id: String) -> float:
 
 # Moves a service's target by `step`, held inside the band its own joint
 # enforces, so a lever can never ask for an angle the machine does not have.
+# Reads one bound pad control. The sandbox hands the machine its bindings; a
+# machine running without a pad, as every test does, simply reads zero.
+var pad_bindings = null
+
+func pad_value(action: String) -> float:
+    return 0.0 if pad_bindings == null else pad_bindings.value(action)
+
+
 func _advance_target(id: String, step: float) -> void:
     var band := joint_limits(id)
-    target_angles[id] = clampf(float(target_angles.get(id, 0.0)) + step,
+    var wanted: float = clampf(float(target_angles.get(id, 0.0)) + step,
         band.x, band.y)
+    # A lever commands flow, not a position: a spool cannot bank up error
+    # while the cylinder lags behind it. Letting the target run away from
+    # where the joint actually is left the motor leaning at full torque on an
+    # angle it could not reach, which is what dragged the pins out of line -
+    # 43 mm at the bucket after two seconds of holding full curl. Keeping the
+    # target within reach of the joint costs nothing when it can follow.
+    # Only a NEW command is held back. Applying this to a standing target as
+    # well let the target be dragged along by a sagging joint, and the two
+    # then ratcheted each other downwards: the bucket crept 168 mm away from
+    # where a reset had just put it, with nothing touching the controls.
+    if absf(step) > 0.0 and hinges.has(id):
+        var measured: float = _joint_angle(id)
+        wanted = clampf(wanted, measured - LEAD_RAD, measured + LEAD_RAD)
+        # ...and never backwards past where the lever had already got to.
+        var current: float = float(target_angles.get(id, wanted))
+        wanted = maxf(wanted, current) if step > 0.0 else minf(wanted, current)
+    target_angles[id] = wanted
 
 func _control_aux(_delta: float) -> void:
     # Dozer blade and boom offset run on their own motors rather than through
@@ -209,13 +234,15 @@ func _physics_process(delta: float) -> void:
         #
         # Real machines carry a valve to swap them, which is why this is a
         # setting and not a rewrite.
+        # The pad's two sticks sit alongside the keys rather than replacing
+        # them. Its bindings carry their own direction, captured from the way
+        # the stick was pushed when it was set up, so nothing is inverted here.
         var left_hand := clampf(
-            float(Input.is_key_pressed(KEY_W)) - float(Input.is_key_pressed(KEY_X)) -
-            INPUTS.stick_y(false), -1.0, 1.0)
+            float(Input.is_key_pressed(KEY_W)) - float(Input.is_key_pressed(KEY_X))
+            + pad_value("arm"), -1.0, 1.0)
         var right_hand := clampf(
-            float(Input.is_key_pressed(KEY_KP_8)) - float(Input.is_key_pressed(KEY_KP_2)) +
-            INPUTS.trigger(joy, JOY_AXIS_TRIGGER_RIGHT) -
-            INPUTS.trigger(joy, JOY_AXIS_TRIGGER_LEFT), -1.0, 1.0)
+            float(Input.is_key_pressed(KEY_KP_8)) - float(Input.is_key_pressed(KEY_KP_2))
+            + pad_value("boom"), -1.0, 1.0)
         # The older single-purpose keys stay bound to their own service, so they
         # mean the same thing whichever pattern is selected.
         var legacy_boom := float(Input.is_key_pressed(KEY_I)) - float(
@@ -228,16 +255,19 @@ func _physics_process(delta: float) -> void:
             + legacy_stick, -1.0, 1.0)
         bucket_cmd = clampf(
             float(Input.is_key_pressed(KEY_KP_4) or Input.is_key_pressed(KEY_P)) -
-            float(Input.is_key_pressed(KEY_KP_6) or Input.is_key_pressed(KEY_SEMICOLON)) +
-            INPUTS.stick_x(false), -1.0, 1.0)
+            float(Input.is_key_pressed(KEY_KP_6) or Input.is_key_pressed(KEY_SEMICOLON))
+            + pad_value("bucket"), -1.0, 1.0)
         slew_cmd = clampf(
             float(Input.is_key_pressed(KEY_D)) - float(Input.is_key_pressed(KEY_A)) +
-            INPUTS.slew(), -1.0, 1.0)
+            INPUTS.slew() + pad_value("swing"), -1.0, 1.0)
         offset_cmd = clampf(
             float(Input.is_key_pressed(KEY_KP_7) or Input.is_key_pressed(KEY_BRACKETLEFT)) -
-            float(Input.is_key_pressed(KEY_KP_9) or Input.is_key_pressed(KEY_BRACKETRIGHT)),
+            float(Input.is_key_pressed(KEY_KP_9) or Input.is_key_pressed(KEY_BRACKETRIGHT))
+            + pad_value("offset_left") - pad_value("offset_right"),
             -1.0, 1.0)
-        blade_cmd = float(Input.is_key_pressed(KEY_T)) - float(Input.is_key_pressed(KEY_Y))
+        blade_cmd = clampf(
+            float(Input.is_key_pressed(KEY_T)) - float(Input.is_key_pressed(KEY_Y))
+            + pad_value("blade_up") - pad_value("blade_down"), -1.0, 1.0)
         # Arrows drive the machine unless the operator is seated in the cab,
         # where they still steer the head.
         if not arrows_look:
@@ -252,6 +282,14 @@ func _physics_process(delta: float) -> void:
             if Input.is_key_pressed(KEY_S):
                 left_lever = 0.0
                 right_lever = 0.0
+            # One pad button per track per direction, which is how it was
+            # asked for: the shoulders drive each track forward and the
+            # triggers reverse that same track. Added to the arrow levers so
+            # either works, and so both tracks can run at once.
+            left_lever += pad_value("track_left_fwd") - pad_value("track_left_rev")
+            right_lever += pad_value("track_right_fwd") - pad_value("track_right_rev")
+            left_lever = clampf(left_lever, -1.0, 1.0)
+            right_lever = clampf(right_lever, -1.0, 1.0)
             travel = (left_lever + right_lever) * 0.5 - INPUTS.stick_y(true)
             turn = (right_lever - left_lever) * 0.5 + INPUTS.stick_x(true)
         travel = clampf(travel, -1.0, 1.0)
@@ -265,12 +303,20 @@ func _physics_process(delta: float) -> void:
     # the levers could ask for angles that did not physically exist.
     _advance_target("boom", boom_cmd * delta * 0.62)
     _advance_target("stick", stick_cmd * delta * 0.70)
-    _advance_target("bucket", bucket_cmd * delta * 1.00)
+    # Negated: curl is the NEGATIVE direction at this joint, while every
+    # control that works it — keypad 4, P, and the pad stick pushed left — is
+    # labelled as curling. Without this the bucket dumped when asked to curl,
+    # which is the other half of the bucket reading as inverted in play.
+    _advance_target("bucket", -bucket_cmd * delta * 1.00)
     _advance_target("blade", blade_cmd * delta * 0.30)
     _advance_target("offset", offset_cmd * delta * 0.35)
     _drive_hydraulics(delta)
     _control_aux(delta)
-    slew_target_rad = clampf(slew_target_rad + slew_cmd * delta * 0.50, -PI, PI)
+    # Negated. A positive yaw about +Y swings the house toward the operator's
+    # LEFT, so D, the right shoulder and the stick pushed right were all
+    # slewing the wrong way. The field trials drive _control_slew directly and
+    # are unaffected.
+    slew_target_rad = clampf(slew_target_rad - slew_cmd * delta * 0.50, -PI, PI)
     total_slew_command_deg = rad_to_deg(slew_target_rad)
     _control_slew(slew_target_rad)
     var left_speed := clampf((travel - turn) * 0.70, -0.80, 0.80)

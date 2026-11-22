@@ -113,25 +113,34 @@ func _run() -> void:
 
 	# 4. The camera must follow the machine round rather than hold a world
 	# bearing, measured as the angle from the machine's forward to the camera.
+	# 4. The camera must follow the BOOM's axis — the house's heading, not the
+	# tracks'. The house carries its relative angle with the undercarriage, so
+	# turning the machine turns both; the bearing from the HOUSE's forward to
+	# the camera is what has to stay put. Slewing on the spot is no use as a
+	# test here: with the tracks gripping sideways at a fraction of their
+	# length, the reaction counter-rotates the whole machine and the house's
+	# world heading barely moves.
+	var house: RigidBody3D = digger.upper
 	var lower: RigidBody3D = digger.undercarriage
-	var before := _bearing(lower, world.camera)
+	digger.target_angles["boom"] = 0.95
+	digger.target_angles["stick"] = -1.18
+	await _settle(420)
+	var before := _bearing(house, world.camera)
 	var yaw_before: float = lower.global_rotation.y
 	var spun := 0
-	# Allow longer than it used to need: the tracks grip properly now and the
-	# slew is ramped, so a neutral turn takes real time rather than snapping.
 	while spun < 3600 and absf(angle_difference(lower.global_rotation.y, yaw_before)) < 0.8:
 		digger._drive_tracks(-0.7, 0.7)
 		await physics_frame
 		spun += 1
 	var turned: float = absf(angle_difference(lower.global_rotation.y, yaw_before))
-	await _settle(180)
-	var after := _bearing(lower, world.camera)
+	await _settle(240)
+	var after := _bearing(house, world.camera)
 	var drift: float = absf(angle_difference(after, before))
-	print("CAMERA turned_rad=", String.num(turned, 3), " bearing_drift_rad=",
-		String.num(drift, 3))
-	check(turned > 0.4, "Test fault: the undercarriage did not turn far enough")
+	print("CAMERA machine_turned_rad=", String.num(turned, 3),
+		" view_drift_rad=", String.num(drift, 3))
+	check(turned > 0.4, "Test fault: the machine did not turn far enough")
 	check(drift < 0.35,
-		"The camera holds a world bearing: the view moved %.2f rad while the machine turned %.2f"
+		"The camera does not follow the boom round: the view moved %.2f rad while the machine turned %.2f"
 			% [drift, turned])
 
 	# 5. Which lever works which service, per the selected pattern. Driven
@@ -181,6 +190,13 @@ func _run() -> void:
 	check(shut < 70.0, "Fully curled the bucket is still %.0f degrees open" % shut)
 	digger.target_angles["bucket"] = bucket_rest
 	await _settle(180)
+
+	# Everything above leaves the machine wherever it finished — dug in,
+	# pivoted, arm in the air. The checks below are about how the machine
+	# stands and pulls, so put it back where it started first rather than
+	# measuring from whatever pose the last section happened to end in.
+	world.reset_machines()
+	await _settle(600)
 
 	# 5c. The machine must have mass. A tractor leaning on it at 3400 N used to
 	# push 8.8 tonnes nearly a metre in five seconds, because the sideways
@@ -321,6 +337,12 @@ func _bearing(body: Node3D, camera: Camera3D) -> float:
 # Holds one key and reports which service target it moved.
 func _service_for(digger, key: int) -> String:
 	digger.operated = true
+	# Put the arm back where it rests first. Left against a stop, or against
+	# the limit on how far a command may lead the joint, a lever has nowhere
+	# to move the target and every service reads as doing nothing.
+	for id in ["boom", "stick", "bucket"]:
+		digger.target_angles[id] = float(digger.hinges[id]["build_angle"])
+	await _settle(240)
 	var before := {}
 	for id in ["boom", "stick", "bucket"]:
 		before[id] = float(digger.target_angles[id])

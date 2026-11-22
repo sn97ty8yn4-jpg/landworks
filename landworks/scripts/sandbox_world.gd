@@ -14,6 +14,8 @@ const ART = preload("res://landworks/scripts/art_scene.gd")
 const MACHINE_ART = preload("res://landworks/scripts/engineered_machine_art.gd")
 const RIGGED_ART = preload("res://landworks/scripts/rigged_machine_art.gd")
 const COUPLER = preload("res://landworks/scripts/coupler.gd")
+const PAD = preload("res://landworks/scripts/pad_bindings.gd")
+const PAD_SETUP = preload("res://landworks/scripts/pad_setup_screen.gd")
 const TRACTOR_HITCH_LOCAL := Vector3(0, -0.20, 1.30)
 
 const SMOKE_DURATION_S := 21.0
@@ -96,6 +98,11 @@ var start_tip := 0.0
 var reset_count := 0
 var reset_down := false
 var pattern_down := false
+var pad_setup_down := false
+var pad_setup_screen: CanvasLayer
+# Where every gamepad control is bound. Built once here and handed to
+# the machines, so nothing reads a raw joypad index of its own.
+var pad = PAD.new()
 var settle_tick := 0
 var start_settled := false
 var tray_discharged_m3 := 0.0
@@ -244,6 +251,8 @@ func _build_machines() -> void:
     add_child(rig_visuals)
     rig_visuals.attach_excavator(digger)
     rig_visuals.attach_trailer(trailer)
+    digger.pad_bindings = pad
+    tractor.pad_bindings = pad
     print(rig_visuals.report())
 
 func _build_earthworks() -> void:
@@ -387,6 +396,14 @@ func _build_ui() -> void:
     instructions.text += "\nF8 — reset all machines to start (the ground stays as dug)"
     instructions.text += "\nH — drop the hitch; reverse the ball under the ring to re-couple"
     instructions.text += "\nV — cab/follow   Arrows / right-drag — look   Home — centre"
+    instructions.text += "\nController (PowerA for Switch 2):"
+    instructions.text += "\n   Left stick: arm out/in, slew      Right stick: pull back raises boom,"
+    instructions.text += "\n      push left curls the bucket"
+    instructions.text += "\n   L / R: each track forward         ZL / ZR: that same track in reverse"
+    instructions.text += "\n   D-pad up/down: blade (tractor: tip the tray)   left/right: boom offset"
+    instructions.text += "\n   A: strap on the digger, hitch on the tractor"
+    instructions.text += "\n   Plus: change machine      Minus: reset      F7: set the pad up"
+    instructions.text += "\n   Soil tips out when you turn the bucket over — there is no dump button"
     instructions.text += "\nMouse wheel — zoom   F2 — inspection view   F1 — close help"
     help_panel.add_child(instructions)
 
@@ -401,7 +418,7 @@ func _select_machine(which: int) -> void:
     orbit_yaw = 0.72 if which == 0 else -0.94
     # Snap the followed heading to the machine being taken over, so switching
     # machines does not swing the camera round from wherever the other one was.
-    var taken: Node3D = tractor if which == 0 else digger.undercarriage
+    var taken: Node3D = tractor if which == 0 else digger.upper
     var facing := Vector2(taken.global_transform.basis.z.x,
         taken.global_transform.basis.z.z)
     if facing.length() > 0.05:
@@ -444,8 +461,14 @@ func _physics_process(delta: float) -> void:
     digger.surface_profile = _current_surface(digger.undercarriage.global_position.x)
     # Trailer tipping: real hinge torque, not a scripted tray transform.
     if not smoke and is_instance_valid(trailer):
+        # The D-pad tips the tray while the tractor is the machine in hand.
+        # On the excavator those same buttons work the blade and the offset,
+        # so there is nothing to share between them.
+        var tray_pad := 0.0
+        if active_machine == 0:
+            tray_pad = pad.value("blade_up") - pad.value("blade_down")
         trailer.command_tip(float(Input.is_key_pressed(KEY_N))
-            - float(Input.is_key_pressed(KEY_B)), delta)
+            - float(Input.is_key_pressed(KEY_B)) + tray_pad, delta)
     for item in props:
         if not is_instance_valid(item):
             continue
@@ -533,12 +556,19 @@ func _update_earthworks(delta: float) -> void:
                     lip - digger.bucket.global_position)
     previous_bucket_lip = lip
     var player_dump := spoil_dump_request or (not smoke and active_machine == 1 and Input.is_key_pressed(KEY_R))
-    var bucket_tip_angle: float = digger._joint_angle("bucket")
-    # Curling forward spills soil under gravity. Manual R provides a simple
-    # discharge override until the actual bucket shell is modelled.
-    var tipped_forward := bucket_tip_angle > 0.32
-    if soil_bucket_m3 > 0.0001 and (player_dump or tipped_forward):
-        var release_volume := minf(soil_bucket_m3, delta * 0.115)
+    # Soil leaves the bucket because of how the bucket is being HELD, not
+    # because of one joint's angle. The old test read _joint_angle("bucket")
+    # against a fixed 0.32, which ignores the boom and arm entirely: at the
+    # same bucket angle the shell sits 34 degrees differently in the world
+    # depending on where the boom is holding it. Measured across the band and
+    # four arm poses, the bucket's own +Y comes nearest to world up exactly at
+    # the dumping pose, so that is what decides it, and the soil runs out
+    # faster the further over it goes rather than all at once.
+    var shell_up: float = digger.bucket.global_transform.basis.y.normalized().dot(Vector3.UP)
+    var tipped_out: float = smoothstep(0.80, 0.95, shell_up)
+    if soil_bucket_m3 > 0.0001 and (player_dump or tipped_out > 0.0):
+        var rate: float = 0.115 if player_dump else 0.115 * tipped_out
+        var release_volume := minf(soil_bucket_m3, delta * rate)
         var released: float = earth.release_soil(
             lip + Vector3.UP * 0.14, digger.bucket.linear_velocity,
             release_volume, soil_bucket_material)
@@ -685,7 +715,7 @@ func _process(delta: float) -> void:
             show_help = not show_help
             help_panel.visible = show_help
         help_down = help_pressed
-        var toggle := CI.switch_machine()
+        var toggle := CI.switch_machine() or pad.pressed("swap_machine")
         if toggle and not toggle_down:
             _select_machine(1 - active_machine)
         toggle_down = toggle
@@ -694,13 +724,19 @@ func _process(delta: float) -> void:
             get_tree().change_scene_to_file("res://landworks/scenes/test_yard.tscn")
             return
         legacy_down = go_legacy
-        var reset_pressed := Input.is_key_pressed(KEY_F8)
+        var reset_pressed := Input.is_key_pressed(KEY_F8) or pad.pressed("reset_machines")
         if reset_pressed and not reset_down:
             hook_status = reset_machines()
         reset_down = reset_pressed
         # Swap the excavator's control pattern, as the valve on a real machine
         # does. Nothing about the hydraulics changes, only which lever works
         # the boom and which works the arm.
+        var setup_pressed := Input.is_key_pressed(KEY_F7)
+        if setup_pressed and not pad_setup_down and pad_setup_screen == null:
+            pad_setup_screen = PAD_SETUP.new(pad)
+            pad_setup_screen.closed.connect(func(): pad_setup_screen = null)
+            add_child(pad_setup_screen)
+        pad_setup_down = setup_pressed
         var pattern_pressed := Input.is_key_pressed(KEY_F6)
         if pattern_pressed and not pattern_down:
             digger.sae_pattern = not digger.sae_pattern
@@ -709,13 +745,18 @@ func _process(delta: float) -> void:
                 else "Controls: ISO — left lever arm, right lever boom")
         pattern_down = pattern_pressed
         var joy := CI.joy_id()
+        # One coupling button on the pad for both machines: it works the
+        # strap on the excavator and the hitch on the tractor, so there is
+        # nothing to remember when swapping between them.
+        var couple_pad := pad.pressed("couple")
         var hook_pressed := active_machine == 1 and (
-            Input.is_key_pressed(KEY_G) or
+            Input.is_key_pressed(KEY_G) or couple_pad or
             (joy >= 0 and Input.is_joy_button_pressed(joy, JOY_BUTTON_X)))
         if hook_pressed and not hook_down:
             hook_status = digger.toggle_hook(props)
         hook_down = hook_pressed
-        var drop_pressed := Input.is_key_pressed(KEY_H)
+        var drop_pressed := Input.is_key_pressed(KEY_H) or (
+            active_machine == 0 and couple_pad)
         if drop_pressed and not drop_down and hitch_coupler != null:
             if hitch_coupler.is_coupled():
                 hitch_coupler.release()
@@ -730,8 +771,13 @@ func _process(delta: float) -> void:
     var target: Node3D = tractor if active_machine == 0 else digger.undercarriage
     # Follow the machine's own heading, smoothed, and ignore it while the body
     # is pitched far enough that its flattened forward is unreliable.
-    var flat := Vector2(target.global_transform.basis.z.x,
-        target.global_transform.basis.z.z)
+    # The view follows the BOOM's axis on the excavator, which is the house's
+    # heading, not the undercarriage's: slewing turns what the operator is
+    # looking at, while the tracks may be pointing anywhere. The camera still
+    # sits over the undercarriage, so the machine does not swing about frame.
+    var facing_body: Node3D = tractor if active_machine == 0 else digger.upper
+    var flat := Vector2(facing_body.global_transform.basis.z.x,
+        facing_body.global_transform.basis.z.z)
     if flat.length() > 0.05:
         camera_heading = lerp_angle(camera_heading, atan2(flat.x, flat.y),
             clampf(delta * 3.0, 0.0, 1.0))

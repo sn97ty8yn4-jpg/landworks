@@ -462,6 +462,68 @@ arm cylinder torques, excluding the bucket from colliding with its own
 machine, and the stalled-service relief. The bucket sags about 40 per cent
 short of any commanded extreme under gravity, and that is not yet explained.
 
+## Gamepad
+
+A PowerA Advantage wired pad for Switch 2: two Hall-effect sticks, D-pad,
+ABXY, L/R and ZL/ZR, two rear paddles, minus and plus. The box rules two
+things out — it has **no rumble and no motion sensing** — so neither is used.
+
+| Control | Does |
+|---|---|
+| Left stick | Arm out and in, slew |
+| Right stick | **Pull back** raises the boom; **push left** curls the bucket |
+| L / R | Left / right track forward |
+| ZL / ZR | That same track in reverse |
+| D-pad up/down | Dozer blade — tips the trailer tray while on the tractor |
+| D-pad left/right | Boom offset |
+| A | Strap on the excavator, hitch on the tractor |
+| Plus / Minus | Change machine / reset the machines |
+| F7 | Set the pad up |
+
+Chosen rather than assumed: ISO pattern, real-lever directions throughout, no
+fine-control modifier, camera left on follow-only, and **no dump button** —
+soil leaves the bucket by how the bucket is being held.
+
+That last one needed a change to go with it. The spill test read
+`_joint_angle("bucket")` against a fixed 0.32, which ignores the boom and arm
+entirely: measured across the band and four arm poses, the shell sits up to 34
+degrees differently in the world at the *same* bucket angle. The bucket's own
++Y comes nearest to world up exactly at the dumping pose, so that is what
+decides it now, and the soil runs out faster the further over it goes rather
+than all at once.
+
+It also turned up a fault in the keyboard. A positive bucket command moved the
+joint positive, which is the **dump** direction, while every control that
+works it — keypad 4, P, and now the stick pushed left — is labelled as
+curling. The bucket had been dumping when asked to curl. Negated.
+
+### The grind, finally
+
+Negating the bucket made `playable_dig_regression` fail, and usefully: its
+curl phase had been *dumping* for two seconds, so it had never actually held
+full curl. Doing so properly dragged the bucket pin 43 mm out of line.
+
+That is the same grind recorded twice before as unexplained — the motor
+leaning at full torque on an angle the cylinder could not reach. The cause was
+the command, not the cylinder: a lever's target integrated freely toward the
+stop while the joint lagged, so the error, and with it the torque, grew
+without limit. A lever commands flow, not a position, and a spool cannot bank
+error while the cylinder trails it. The target is now held within 0.35 rad of
+the angle the joint has actually reached, which costs nothing while it can
+follow. Pin separation in the dig fell from 43 mm to **24**, and it cuts more
+soil than before.
+
+### Why there is a setup screen
+
+Windows does not reliably report a Switch pad's buttons where an Xbox pad's
+would be, so the shipped defaults may land on the wrong physical buttons.
+Rather than guess, `F7` walks through every control, asks you to press or push
+the one you want, and remembers it in `user://pad_bindings.cfg`. Axis
+bindings record the *direction* they were pushed, so nothing has to be
+inverted afterwards. Nothing in the game reads a raw joypad index; it all goes
+through the bindings, which is also what lets `pad_mapping_smoke` test the
+mapping with no pad plugged in, on this machine or in CI.
+
 ## The camera that did not follow
 
 `orbit_yaw` was an absolute world bearing, so the camera held its heading

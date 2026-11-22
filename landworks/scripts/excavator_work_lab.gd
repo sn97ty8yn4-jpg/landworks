@@ -48,6 +48,8 @@ const BUCKET_TORQUE_LIMIT_NM := 20000.0
 const SLEW_TORQUE_LIMIT_NM := 25000.0
 # How far out from a stop a service starts easing off, in radians.
 const CUSHION_RAD := 0.22
+# How far a lever's target may lead the angle the joint has actually reached.
+const LEAD_RAD := 0.35
 # What fraction of its torque a fully stalled service holds, standing in for
 # the relief valve lifting rather than the pin being torn out.
 const RELIEF_TORQUE_FRACTION := 0.30

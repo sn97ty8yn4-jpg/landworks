@@ -99,9 +99,25 @@ func _wheel(at: Vector3, radius: float, width: float, steering: bool, torque_sha
     wheel_data.append({"mount": at, "radius": radius, "steering": steering,
         "drive_share": torque_share, "root": root, "visual": spin, "rotation": 0.0})
 
+# Set by the sandbox. A tractor with no pad, as in every field trial, reads
+# zero from this and behaves exactly as it did.
+var pad_bindings = null
+
 func _physics_process(delta: float) -> void:
-    var target_throttle := benchmark_throttle if benchmark_enabled else (CI.throttle() if controlled else 0.0)
-    var target_steer := benchmark_steer if benchmark_enabled else (CI.steering() if controlled else 0.0)
+    # The pad drives the tractor from the left stick, which is what it was
+    # asked to do. CI.throttle() only ever read the analog triggers, and this
+    # pad has none to read, so the wheels steered but would not go anywhere.
+    # The same binding the excavator uses for the arm is reused here rather
+    # than asking for the stick twice when setting the pad up.
+    var pad_throttle := 0.0
+    var pad_steer := 0.0
+    if controlled and pad_bindings != null:
+        pad_throttle = pad_bindings.value("arm")
+        pad_steer = pad_bindings.value("swing")
+    var target_throttle := benchmark_throttle if benchmark_enabled else (
+        clampf(CI.throttle() + pad_throttle, -1.0, 1.0) if controlled else 0.0)
+    var target_steer := benchmark_steer if benchmark_enabled else (
+        clampf(CI.steering() + pad_steer, -1.0, 1.0) if controlled else 0.0)
     throttle_request = move_toward(throttle_request, target_throttle, delta * 2.1)
     steer_request = move_toward(steer_request, target_steer, delta * 2.8)
     var forward := -global_transform.basis.z

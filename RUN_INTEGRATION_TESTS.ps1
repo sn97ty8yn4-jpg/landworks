@@ -12,6 +12,7 @@ $cases = [ordered]@{
     reset_smoke = 'RESET PASS'
     machine_feel_smoke = 'MACHINE_FEEL PASS'
     machine_controls_smoke = 'MACHINE_CONTROLS PASS'
+    pad_mapping_smoke = 'PAD_MAPPING PASS'
     material_mechanics_smoke = 'MATERIAL_MECHANICS PASS'
     slope_stability_smoke = 'SLOPE_STABILITY PASS'
     playable_dig_regression = 'PLAYABLE_DIG PASS'
@@ -24,14 +25,19 @@ $cases = [ordered]@{
     hydraulic_smoke = 'HYDRAULIC_SMOKE PASS'
     sandbox_hook_smoke = 'SANDBOX_HOOK_PASS'
 }
+# Most checks are well inside a minute. One drives the machine through several
+# seconds of real physics a dozen times over and legitimately needs longer, so
+# it is named here rather than the limit being lifted for everything.
+$longCases = @('machine_controls_smoke')
 function Invoke-CheckedGodot([string]$Name, [string[]]$EngineArguments, [string]$Expected) {
     $log = Join-Path $outputDirectory ($Name + '.log')
     $arguments = @('--headless', '--path', ('"' + $PSScriptRoot + '"'),
         '--log-file', ('"' + $log + '"')) + $EngineArguments
     $process = Start-Process -FilePath $Godot -ArgumentList $arguments -PassThru -WindowStyle Hidden
-    if (!$process.WaitForExit(120000)) {
+    $limitMs = if ($longCases -contains $Name) { 300000 } else { 120000 }
+    if (!$process.WaitForExit($limitMs)) {
         $process.Kill()
-        throw "$Name exceeded the 120 second test limit. See $log"
+        throw "$Name exceeded its $($limitMs / 1000) second test limit. See $log"
     }
     $process.Refresh()
     $content = Get-Content -LiteralPath $log -Raw
