@@ -513,6 +513,31 @@ the angle the joint has actually reached, which costs nothing while it can
 follow. Pin separation in the dig fell from 43 mm to **24**, and it cuts more
 soil than before.
 
+### The bucket knuckle
+
+Reported as not attached, and it was. In the model `Bucket_HLink` is a child
+of **Bucket** while `Bucket_Guide_Links` — carrying `Cyl_Bucket_Rod` and
+`Pin_HLink_Q` — is a child of **Arm**. Bound rigidly, the knuckle swung away
+with the bucket while the links that hold it stayed with the arm. It also
+explains the ram that never stroked: both of its registered pins were on the
+arm, so its length could not change.
+
+The ram is now aimed at the knuckle on the bucket and strokes **1.389 to
+1.932 m, 1.39x its shortest** — the same order as the arm ram's 1.41x. The
+guide links are aimed at the knuckle so they follow it.
+
+Two attempts that had to be undone first, because the rod rides those links:
+
+* Stretching the links to span the gap — the gap really does change, 0.09 to
+  0.63 m across the sweep, because the physics turns the bucket on a plain
+  hinge with nothing constraining it. Scaling them threw the rod's origin
+  0.63 m off its pin.
+* Simply aiming the links without scaling. Still 0.64 m, because rotating
+  them moves any child's origin.
+
+The rod end is lifted off the links and planted on the knuckle each frame,
+which is what a rod end does. Pin drift is **1.6 mm**.
+
 ### Why there is a setup screen
 
 Windows does not reliably report a Switch pad's buttons where an Xbox pad's

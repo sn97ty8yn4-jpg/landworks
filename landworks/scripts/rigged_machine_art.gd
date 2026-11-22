@@ -28,6 +28,11 @@ var trailer_root: Node3D
 var bound_parts := 0
 var missing_parts: Array[String] = []
 var cylinders: Array[Dictionary] = []
+# Parts that pivot on one body and must keep pointing at a point on
+# another, like the bucket's guide links reaching for its knuckle.
+var linkage: Array[Dictionary] = []
+# Parts whose origin must sit on a pin that belongs to another body.
+var followers: Array[Dictionary] = []
 var track_shoes: Array[Array] = []
 var track_phase := [0.0, 0.0]
 var shoe_basis := Basis.IDENTITY
@@ -140,7 +145,27 @@ static func _aim(node: Node3D, target: Vector3, sign: float = 1.0) -> void:
 	var y := z.cross(x).normalized()
 	node.global_transform = Transform3D(Basis(x, y, z), origin)
 
+func _aim_linkage() -> void:
+	for follower in followers:
+		var part: Node3D = follower["part"]
+		var pin: Node3D = follower["pin"]
+		if is_instance_valid(part) and is_instance_valid(pin):
+			part.global_position = pin.global_position
+	for link in linkage:
+		var part: Node3D = link["part"]
+		var target: Node3D = link["target"]
+		if not (is_instance_valid(part) and is_instance_valid(target)):
+			continue
+		_aim(part, target.global_position, float(link["sign"]))
+		# Deliberately NOT stretched to span the gap. That gap really does
+		# change — 0.09 m to 0.63 m across the sweep, because the physics
+		# turns the bucket on a plain hinge with no linkage constraining it —
+		# but the ram's rod is parented to these links, so scaling them threw
+		# its origin up to 0.63 m off its own pin. Pointing at the knuckle is
+		# the part that matters; the link keeps its modelled length.
+
 func _aim_cylinders() -> void:
+	_aim_linkage()
 	for cylinder in cylinders:
 		var barrel: Node3D = cylinder["barrel"]
 		var rod: Node3D = cylinder["rod"]
@@ -255,6 +280,13 @@ func attach_excavator(machine: Node3D) -> void:
 	var bucket := _find(machine_root, "Bucket")
 	var blade := _find(machine_root, "Dozer_Blade")
 	bucket_tip = _find(machine_root, "Bucket_Tip")
+	# The bucket linkage. Bucket_HLink rides the bucket, while the guide links
+	# and the ram's rod ride the arm, so with everything rigid the knuckle
+	# swung away from the links that are supposed to hold it the moment the
+	# bucket turned — and the ram, having both of its pins on the arm, never
+	# changed length at all.
+	var hlink := _find(machine_root, "Bucket_HLink")
+	var guide_links := _find(machine_root, "Bucket_Guide_Links")
 	var pins := {}
 	for pin in ["Pin_Boom_Base", "Pin_Boom_Rod", "Pin_Arm_Base", "Pin_Arm_Rod",
 			"Pin_Bucket_Base", "Pin_HLink_Q", "Pin_Swing_Base", "Pin_Swing_Rod",
@@ -292,8 +324,33 @@ func attach_excavator(machine: Node3D) -> void:
 		barrels["Cyl_Boom_Rod"], pins["Pin_Boom_Rod"])
 	_register_cylinder(barrels["Cyl_Arm_Barrel"], pins["Pin_Arm_Base"],
 		barrels["Cyl_Arm_Rod"], pins["Pin_Arm_Rod"])
-	_register_cylinder(barrels["Cyl_Bucket_Barrel"], pins["Pin_Bucket_Base"],
-		barrels["Cyl_Bucket_Rod"], pins["Pin_HLink_Q"])
+	# Aimed at the knuckle on the BUCKET, so the ram strokes as the bucket
+	# turns and the rod stays pointing back at its own barrel. The rod stays
+	# parented to the guide links on purpose: its ORIGIN then travels with
+	# them, which is what keeps it on its pin, while _aim overrides only its
+	# rotation. Lifting it out left the origin standing still and the rod
+	# drifted 0.44 m off the pin.
+	# The rod end rides its own pin, so it is lifted off the guide links and
+	# planted on the knuckle every frame. Left parented to the links, aiming
+	# those links swung its origin up to 0.64 m away from the pin it is
+	# supposed to be sitting on.
+	var bucket_rod: Node3D = barrels["Cyl_Bucket_Rod"]
+	if guide_links != null and hlink != null and bucket_rod != null 			and bucket_rod.get_parent() == guide_links:
+		var keep := bucket_rod.global_transform
+		guide_links.remove_child(bucket_rod)
+		guide_links.get_parent().add_child(bucket_rod)
+		bucket_rod.global_transform = keep
+		followers.append({"part": bucket_rod, "pin": hlink})
+	_register_cylinder(barrels["Cyl_Bucket_Barrel"],
+		pins["Pin_Bucket_Base"],
+		bucket_rod,
+		hlink if hlink != null else pins["Pin_HLink_Q"])
+	# The guide links swing on the arm and hold the knuckle, so they are
+	# aimed at it the same way a barrel is aimed at its rod's pin.
+	if guide_links != null and hlink != null:
+		linkage.append({"part": guide_links, "target": hlink,
+			"sign": _axis_sign(guide_links),
+			"rest": guide_links.global_position.distance_to(hlink.global_position)})
 	_register_cylinder(barrels["Cyl_Swing_Barrel"], pins["Pin_Swing_Base"],
 		barrels["Cyl_Swing_Rod"], pins["Pin_Swing_Rod"])
 	_register_cylinder(barrels["Cyl_Blade_Barrel"], pins["Pin_Blade_Base"],
