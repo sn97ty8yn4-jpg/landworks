@@ -188,12 +188,19 @@ func _support_on_jockey() -> void:
 	# drawbar. This is a contact force against whatever is under the foot,
 	# not a frozen transform: shunting the trailer still moves it.
 	jockey_contact = false
-	if hitched:
+	if jockey_shape == null:
 		return
 	# The stand is a real collision shape, enabled only when the drawbar is
 	# not on a ball. Letting the solver handle the contact avoids inventing a
 	# spring, and shunting the parked trailer still moves it.
-	if jockey_shape == null:
-		return
+	#
+	# Retracting it is handled BEFORE any early exit on `hitched`. An earlier
+	# version returned straight away while hitched and so never wound the
+	# stand back up: a trailer that had been dropped once then towed with its
+	# foot on the ground, and because the foot sits 300 mm to the left of the
+	# drawbar it dragged the outfit off line. Six seconds of full throttle
+	# covered 9.67 m instead of 13.89 m and ended 5.7 degrees off course with
+	# the wheel dead ahead. `coupling_smoke` now tows after a drop and holds
+	# both of those numbers.
 	jockey_shape.disabled = hitched
 	jockey_contact = not hitched

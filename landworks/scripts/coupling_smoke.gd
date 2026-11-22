@@ -79,6 +79,55 @@ func _run() -> void:
 	check(world.trailer.jockey_contact,"Jockey foot found no ground to stand on")
 	check(tilt < 8.0,"Parked trailer nosed over without its jockey stand")
 
+	# Towed again after it has been dropped once — the sequence a player makes
+	# with H, which no test covered. The stand must be wound back up: left
+	# down it clears the ground by 50 mm, and sitting 300 mm to the left of
+	# the drawbar it drags. Left down, this same drive covered 8.3 m where it
+	# should cover 13.9, at 5.0 km/h instead of 8.3, and ran 7 degrees off
+	# line with the wheel dead ahead.
+	#
+	# The trailer is dropped and left to settle on the foot before being
+	# picked up again, because that is what plants the foot. Re-coupling
+	# without that pause leaves it hanging and the drive looks clean, which
+	# is how a flag-only check would pass over the fault.
+	world.reset_machines()
+	for _n in range(240):
+		await physics_frame
+	hitch.release()
+	world._update_hitch()
+	for _n in range(90):
+		await physics_frame
+	check(not world.trailer.jockey_shape.disabled,
+		"Jockey stand did not deploy when the trailer was dropped")
+	hitch.armed = true
+	world._update_hitch()
+	for _n in range(120):
+		await physics_frame
+	check(hitch.is_coupled(),"Trailer did not re-couple after being dropped")
+	check(world.trailer.jockey_shape.disabled,
+		"Jockey stand stayed down on a hitched trailer")
+	var tractor = world.tractor
+	tractor.benchmark_enabled = true
+	tractor.benchmark_throttle = 0.85
+	tractor.benchmark_steer = 0.0
+	var towed_from: Vector3 = tractor.global_position
+	var facing: Vector3 = -tractor.global_transform.basis.z
+	var yaw_from: float = atan2(facing.x,facing.z)
+	for _n in range(720):
+		await physics_frame
+	tractor.benchmark_throttle = 0.0
+	tractor.benchmark_enabled = false
+	var heading: Vector3 = -tractor.global_transform.basis.z
+	var drift := rad_to_deg(absf(wrapf(
+		atan2(heading.x,heading.z) - yaw_from,-PI,PI)))
+	var towed: float = (tractor.global_position - towed_from).dot(facing)
+	print("TOWED along_m=",String.num(towed,2)," heading_drift_deg=",
+		String.num(drift,1)," jockey_disabled=",world.trailer.jockey_shape.disabled)
+	check(towed > 12.0,"Towing the trailer 6 s covered only %.2f m" % towed)
+	check(drift < 3.0,"The outfit wandered %.1f deg with the wheel straight" % drift)
+	for _n in range(120):
+		await physics_frame
+
 	# Lifting strap on the excavator.
 	var digger = world.digger
 	var strap = digger.strap
