@@ -31,11 +31,19 @@ static func commit() -> String:
 static func commit_date() -> String:
 	var ref := _head_ref_path()
 	if ref != "" and FileAccess.file_exists(ref):
-		return Time.get_date_string_from_unix_time(FileAccess.get_modified_time(ref))
+		return _local_date(FileAccess.get_modified_time(ref))
 	var git_head := _git_dir().path_join("HEAD")
 	if FileAccess.file_exists(git_head):
-		return Time.get_date_string_from_unix_time(FileAccess.get_modified_time(git_head))
+		return _local_date(FileAccess.get_modified_time(git_head))
 	return _stamp_field("date")
+
+# In the operator's own day, not UTC. Godot reads a timestamp back as UTC, so
+# east of Greenwich a build made this morning printed yesterday's date —
+# which is precisely the doubt this whole line exists to remove.
+static func _local_date(unix_time: int) -> String:
+	var zone: Dictionary = Time.get_time_zone_from_system()
+	return Time.get_date_string_from_unix_time(
+		unix_time + int(zone.get("bias", 0)) * 60)
 
 # "repository" when read from the checkout beside the game, "stamp" when read
 # from a packaged copy, "unknown" when neither was there.
