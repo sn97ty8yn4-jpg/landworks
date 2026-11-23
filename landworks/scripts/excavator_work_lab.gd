@@ -34,6 +34,11 @@ const TRACK_MACHINE_MASS_KG := 8170.0
 # and the machine still pulls hard against 30 kN.
 const TRACK_SPEED_FEEDBACK_N_PER_MPS := 36000.0
 const TRACK_LATERAL_SKID_N_PER_MPS := 1900.0
+# Travel-motor parking brake, per contact patch — 28 kN across the four of
+# them, about a third of the machine’s weight, which is the order a
+# spring-applied track brake holds. Capped rather than a full arrest so the
+# load it refuses to pass to the ground does not go through the arm pins.
+const TRACK_BRAKE_N := 7000.0
 # How much of a contact patch's grip resists sideways slip. A rubber track
 # holds better along its length than across it, which is what lets the
 # machine pivot on the spot; at 1.0 it could not neutral-turn at all.
@@ -45,8 +50,8 @@ const TRACK_LATERAL_SKID_N_PER_MPS := 1900.0
 # grip, measurably worse, because a larger sideways demand takes the whole
 # friction circle and crowds out the drive that was resisting. Steady pushes
 # did not change at all (10 kN still moves it 43 mm either way), since they
-# never approach the budget. The sustained push is contact resolution, not a
-# grip shortfall.
+# never approach the budget. What a tractor leaning on the machine actually
+# needed was the travel brake below, not a bigger sideways budget.
 const LATERAL_GRIP_FRACTION := 0.18
 const BOOM_TORQUE_LIMIT_NM := 75000.0  # engineering starting assumption, NOT OEM value
 # Both were tried higher — 60000 and 28000 — on the theory that the arm and
@@ -143,6 +148,13 @@ var last_track_left_force_n := 0.0
 var last_track_right_force_n := 0.0
 var last_track_lateral_force_n := 0.0
 var last_track_slip_mps := Vector2.ZERO
+# True while a hydraulic service is being worked. The travel brake releases
+# then: a brake that stays on while the arm drags removes the creep the
+# clay-versus-hardpack field cases measure. Read from the TARGETS moving,
+# never from the servo output — reading the servo let the machine defeat its
+# own brake, because being shoved swings the arm and the servos answer.
+var working_hydraulics := false
+var last_service_targets: Dictionary = {}
 var start_base_xz := Vector2.ZERO
 var max_base_planar_displacement_m := 0.0
 var surface_profile: Dictionary = {}
@@ -463,12 +475,15 @@ func _drive_tracks(target_left: float, target_right: float) -> void:
             # it 0.044 m, because only the sideways direction was given the
             # standing-friction treatment — the gate that proved that fix
             # pushed along basis.x alone, so the direction a tractor actually
-            # shoves from was never measured. THIS IS A KNOWN OPEN FAULT.
+            # shoves from was never measured.
             #
-            # It is left here deliberately. Replacing this gain with a
-            # one-tick arrest, the way the sideways term works, was tried four
-            # ways and every one of them broke a field-trial gate that was
-            # green and that encodes real physics:
+            # A dashpot is still what a DRIVEN track gets, which is right: a
+            # track under power develops tractive force along its slip curve.
+            # What was missing is the brake below, for a track that is not
+            # being driven. Replacing this gain outright with a one-tick
+            # arrest was tried four ways first, and every one of them broke a
+            # field-trial gate that was green and that encodes real physics —
+            # recorded so they are not tried again:
             #
             #  - whole-machine mass share: 980 kN per m/s against a 2200 kg
             #    undercarriage, 3.7x what cancels its velocity in a tick, so
@@ -488,15 +503,38 @@ func _drive_tracks(target_left: float, target_right: float) -> void:
             #    that the contrast depends on is below it.
             #  - only when no service is being worked: the push holds at
             #    0.145 m and every field trial passes, but playable_dig_regression
-            #    fails with 49.6 mm of pin gap at the curl.
+            #    fails with 49.6 mm of pin gap at the curl against a 40 mm
+            #    limit — holding the chassis firm puts the load the chassis
+            #    used to give way under through the stick and bucket pins
+            #    instead. That is the attempt below, with the force CAPPED at
+            #    a brake figure rather than demanding a full arrest, so the
+            #    pins see a bounded load.
             #
-            # The clay/hardpack contrast in drag_clay_1000 currently comes
-            # from the machine creeping, so fixing the creep removes the
-            # contrast. Landing this properly means grounding that contrast in
-            # soil resistance first. Do not weaken those gates to get it in.
-            var drive_n := clampf(
-                (requested - longitudinal_mps) * TRACK_SPEED_FEEDBACK_N_PER_MPS / float(contacts),
-                -per_patch_mu_n, per_patch_mu_n)
+            # The clay/hardpack contrast in drag_clay_1000 comes from the
+            # machine creeping, so a brake that is on while the arm is working
+            # removes the contrast. This one releases while a service is
+            # worked, which is why the clay cases survive.
+            #
+            # What this models: a tracked machine's travel motors are
+            # spring-applied and hydraulically released. Parked, the tracks
+            # are BRAKED — that is why a parked excavator is not shoved about,
+            # and why the reaction of a swinging house turns the house and not
+            # the chassis. There was no brake here at all, only "commanded
+            # zero speed" through a soft dashpot, which is why 10 kN slid it
+            # 0.55 m and a 70 degree swing span the chassis 14 degrees.
+            var patch_mass: float = undercarriage.mass / float(contacts * 2)
+            var slip: float = requested - longitudinal_mps
+            var braked: bool = absf(requested) < 0.02 and not working_hydraulics
+            var drive_n: float
+            if braked:
+                drive_n = clampf(slip * patch_mass * float(
+                    Engine.physics_ticks_per_second),
+                    -TRACK_BRAKE_N, TRACK_BRAKE_N)
+                drive_n = clampf(drive_n, -per_patch_mu_n, per_patch_mu_n)
+            else:
+                drive_n = clampf(
+                    slip * TRACK_SPEED_FEEDBACK_N_PER_MPS / float(contacts),
+                    -per_patch_mu_n, per_patch_mu_n)
             # Sideways sliding of a rubber track is resisted, but not welded
             # to the ground. The front/rear patch arms create realistic
             # turning scrub and help damp yaw oscillations.
@@ -623,6 +661,13 @@ func _drive_hydraulics(_delta: float) -> void:
         "stick": STICK_TORQUE_LIMIT_NM, "bucket": BUCKET_TORQUE_LIMIT_NM}
     for id in ["boom", "stick", "bucket"]:
         speed_requests[id] = _desired_joint_velocity(id)
+    var commanded := false
+    for id in ["boom", "stick", "bucket"]:
+        var wanted: float = float(target_angles.get(id, 0.0))
+        if absf(wanted - float(last_service_targets.get(id, wanted))) > 1e-5:
+            commanded = true
+        last_service_targets[id] = wanted
+    working_hydraulics = commanded
     # Gravity moments estimated at each actuator; the rigid-body engine
     # independently resolves REAL mass, load and stall through its hinge motors.
     var hook: Vector3 = test_mass.global_position

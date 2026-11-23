@@ -32,8 +32,17 @@ default_gravity=9.81
 ; A chain of heavy bodies on powered pins needs more solver work than the
 ; defaults of 10 velocity and 2 position steps. At the defaults the bucket
 ; pin separated 204 mm in clear air at the extremes of its travel, which is
-; what "the arm breaks when used" looks like; at these settings it is 66 mm.
-; The position steps are what hold the chain together - raising the velocity
-; steps alone changed nothing.
-simulation/velocity_steps=16
-simulation/position_steps=8
+; what "the arm breaks when used" looks like. At 16/8 it was 45 mm, which was
+; passing its 60 mm gate by so little that the margin kept flipping; at these
+; settings it is 41 mm with the travel brake holding the chassis still, and
+; the dig regression's stick-to-bucket gap went from 42 mm - over its own
+; 40 mm limit - to 37 mm. The position steps are what hold the chain
+; together: raising the velocity steps alone changed nothing.
+;
+; 32/16 is better still (8.7 mm pin sweep, 12 mm dig gap) and costs no
+; measurable time, but the restore then commits 2.3 litres of soil as an
+; excavation and reset_smoke rejects it. Suppressing cutting for six ticks
+; after the restore helps but does not account for all of it, so the cause is
+; still open. Raise these to 32/16 once it is understood.
+simulation/velocity_steps=24
+simulation/position_steps=12

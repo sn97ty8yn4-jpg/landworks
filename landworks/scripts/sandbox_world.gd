@@ -78,6 +78,13 @@ var soil_bucket_m3 := 0.0
 var soil_bucket_material := "gravel"
 var previous_bucket_lip := Vector3.ZERO
 var previous_bucket_lip_valid := false
+# Ticks after a restore during which no soil is cut. Dropping the cutting-edge
+# history for ONE tick was enough while the solver did 8 position steps; with
+# more of them it pulls the arm chain together over several ticks after the
+# teleport, and that settling motion was committed as a 2.2 litre excavation
+# the player never asked for. The ground is left as dug either way — this only
+# stops the jump home being read as a cut.
+var soil_settle_ticks := 0
 var maximum_excavated_m3 := 0.0
 var maximum_dumped_m3 := 0.0
 var tip_previous_m3 := 0.0
@@ -477,6 +484,8 @@ func _current_surface(x: float) -> Dictionary:
 
 func _physics_process(delta: float) -> void:
     # Machine and loose-body contact forces all run in the same Jolt world.
+    if soil_settle_ticks > 0:
+        soil_settle_ticks -= 1
     tractor.ground_mu_override = 0.53 if tractor.global_position.x > CLAY_START_X else T.GROUND_MU
     _update_hitch()
     digger.update_strap(props)
@@ -556,7 +565,7 @@ func _update_earthworks(delta: float) -> void:
     # player pressing a magical remove-soil button. The bucket must reach an
     # actual bank and move through it while below the soil surface.
     var lip: Vector3 = digger.bucket.to_global(digger.BUCKET_TIP)
-    if not previous_bucket_lip_valid:
+    if not previous_bucket_lip_valid or soil_settle_ticks > 0:
         previous_bucket_lip = lip
         previous_bucket_lip_valid = true
         return
@@ -637,7 +646,7 @@ func _cutting_edge_local() -> Vector3:
 
 func _update_material_mechanics(delta: float) -> void:
     var lip: Vector3 = digger.bucket.to_global(_cutting_edge_local())
-    if not previous_bucket_lip_valid:
+    if not previous_bucket_lip_valid or soil_settle_ticks > 0:
         var state := PhysicsServer3D.body_get_direct_state(digger.bucket.get_rid())
         if state != null: bucket_empty_center = state.center_of_mass_local
         previous_bucket_lip = lip
@@ -861,7 +870,7 @@ func _update_blade_push() -> void:
     if not is_instance_valid(digger.dozer_blade):
         return
     var edge: Vector3 = digger.dozer_blade.to_global(BLADE_EDGE_LOCAL)
-    if not previous_blade_edge_valid:
+    if not previous_blade_edge_valid or soil_settle_ticks > 0:
         previous_blade_edge = edge
         previous_blade_edge_valid = true
         return
@@ -961,6 +970,7 @@ func reset_machines() -> String:
     digger.slew_target_rad = 0.0
     trailer.tip_target = start_tip
     previous_bucket_lip_valid = false
+    soil_settle_ticks = 6
     previous_blade_edge_valid = false
     previous_blade_edge = Vector3.ZERO
     pending_soil_contact.clear()
