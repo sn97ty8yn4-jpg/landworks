@@ -34,11 +34,20 @@ const TRACK_MACHINE_MASS_KG := 8170.0
 # and the machine still pulls hard against 30 kN.
 const TRACK_SPEED_FEEDBACK_N_PER_MPS := 36000.0
 const TRACK_LATERAL_SKID_N_PER_MPS := 1900.0
-# Travel-motor parking brake, per contact patch — 28 kN across the four of
-# them, about a third of the machine’s weight, which is the order a
-# spring-applied track brake holds. Capped rather than a full arrest so the
-# load it refuses to pass to the ground does not go through the arm pins.
-const TRACK_BRAKE_N := 7000.0
+# Travel-motor parking brake: what the brake itself can hold at one contact
+# patch, 80 kN across the four. It is deliberately ABOVE the grip budget on
+# every surface, so the ground is what limits a braked track and not this
+# number — which is the physical answer, because a brake holds the track
+# still and the machine then slides on the ground at mu*N.
+#
+# It was first set to 7000, a third of the machine's weight, on the reasoning
+# that a bounded force would keep load out of the arm pins. That was wrong
+# twice over: the pin gap turned out to be solver work rather than brake
+# force (lowering the brake made the gap WORSE), and the cap also made a
+# braked track weaker at speed than the dashpot it replaced, which could
+# reach the full mu*N. A tractor driving into the machine then shoved it
+# 18.93 m where it had managed 7.85, and span it 140 degrees instead of 37.
+const TRACK_BRAKE_N := 20000.0
 # How much of a contact patch's grip resists sideways slip. A rubber track
 # holds better along its length than across it, which is what lets the
 # machine pivot on the spot; at 1.0 it could not neutral-turn at all.
