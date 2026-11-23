@@ -240,6 +240,21 @@ func _build_machines() -> void:
     trailer.global_position = hitch_world - trailer.global_transform.basis * trailer.HITCH_POINT
     # The tipping tray is a sibling rigid body on a real rear pin.
     trailer.build_tray(self)
+    # The farm machines must be able to SEE the excavator, which lives on
+    # layer 2. They were never given layers at all, so they kept Godot's
+    # default mask of 1 and could not detect it, while the excavator's own
+    # mask of 1 could detect them. The contact was one-way: the excavator
+    # answered the tractor and the tractor felt nothing back. Measured at the
+    # contact, a tractor driving into the parked machine put 12 kN into it and
+    # took 0.9 kN itself, never slowed from 12 km/h, and shoved 8.6 tonnes
+    # around the yard — and raising the track friction made it WORSE, because
+    # a firmer grip on a one-way contact only drags harder. The loose props
+    # were always built with mask 3 and behave correctly: a 450 kg crate
+    # thrown at the same speed moves the machine 0.00 m.
+    for body in [tractor, trailer, trailer.tray]:
+        if is_instance_valid(body):
+            body.collision_layer = 1
+            body.collision_mask = 3
     # The drawbar is no longer welded on. Reverse the ball under the ring and
     # it couples itself; H drops it again. Starts coupled because the trailer
     # is placed on the ball, so the first tick captures.

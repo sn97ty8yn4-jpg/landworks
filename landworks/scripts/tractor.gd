@@ -35,6 +35,10 @@ var tyre_grip_utilisation := 0.0
 # because a ray-cast wheel resting on a rigid body is where force gets made
 # out of nothing, and that cannot be seen from the outside.
 var last_wheel_force_total_n := 0.0
+# World-space sum of the wheel forces applied this tick, for a force balance
+# against the body’s own momentum change. The magnitude total above cannot be
+# compared with dp/dt.
+var last_wheel_force_world := Vector3.ZERO
 var wheels_on_rigid_body := 0
 
 # Approximate compact tractor parameters. Adjust using real dimensions and test data.
@@ -154,6 +158,7 @@ func _physics_process(delta: float) -> void:
     last_requested_hst_force_n = clampf(requested_force, -drive_limit, drive_limit)
     tyre_grip_utilisation = 0.0
     last_wheel_force_total_n = 0.0
+    last_wheel_force_world = Vector3.ZERO
     wheels_on_rigid_body = 0
     for i in range(wheel_data.size()):
         var wheel: Dictionary = wheel_data[i]
@@ -209,6 +214,7 @@ func _physics_process(delta: float) -> void:
             # contact: the tractor was transmitting 5-12 kN while its own
             # drive could only ever make 2.5 kN.
             last_wheel_force_total_n += wheel_force.length()
+            last_wheel_force_world += wheel_force
             var support = hit["collider"]
             if support is RigidBody3D:
                 wheels_on_rigid_body += 1

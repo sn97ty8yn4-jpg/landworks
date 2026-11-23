@@ -157,6 +157,10 @@ var last_track_left_force_n := 0.0
 var last_track_right_force_n := 0.0
 var last_track_lateral_force_n := 0.0
 var last_track_slip_mps := Vector2.ZERO
+# The world-space sum of every patch force applied this tick. Needed to do a
+# force balance against the machine’s momentum change: the sideways and
+# longitudinal totals alone cannot be compared with dp/dt.
+var last_track_force_world := Vector3.ZERO
 # True while a hydraulic service is being worked. The travel brake releases
 # then: a brake that stays on while the arm drags removes the creep the
 # clay-versus-hardpack field cases measure. Read from the TARGETS moving,
@@ -436,6 +440,7 @@ func _drive_tracks(target_left: float, target_right: float) -> void:
     last_track_right_force_n = 0.0
     last_track_lateral_force_n = 0.0
     last_track_slip_mps = Vector2.ZERO
+    last_track_force_world = Vector3.ZERO
     var track_speed_commands := [target_left, target_right]
     for index in range(2):
         var side := -1.0 if index == 0 else 1.0
@@ -570,6 +575,7 @@ func _drive_tracks(target_left: float, target_right: float) -> void:
                 combined *= per_patch_mu_n / combined.length()
             var patch_force: Vector3 = forward * combined.x + right * combined.y
             undercarriage.apply_force(patch_force, arm)
+            last_track_force_world += patch_force
             # Whatever the track is gripping against is pushed back. Static
             # ground does not care; a machine or trailer under the track does.
             var support = contact_supports[patch]

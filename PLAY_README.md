@@ -13,26 +13,58 @@ runtime/editor executable. Its download was checked against the release's
 SHA-512 manifest. Engine copyright, MIT licence and dependency notices are in
 `runtime`. The engine is the official binary; the game source is independent.
 
-**Controls**
+**Which build am I running?**
+
+Top right of the screen, and in the window title: `Landworks v0.9.0 • build
+<commit> • <date>`. Run from this folder it is read live out of the
+repository, so it cannot go stale — if it does not match what you expect,
+you are running a different copy.
+
+**Controls — keyboard**
+
+Press **F1** in game for the same list; that overlay is the authority and
+this table is copied from it.
 
 | Action | Key |
 | --- | --- |
-| Switch tractor / excavator | Tab |
-| Drive / reverse | W / S |
-| Steer or differential crawler turn | A / D |
-| Orbit camera | Z / C |
-| Zoom | Mouse wheel |
-| Low inspection camera | F2 |
-| Controls overlay | F1 |
-| Enter / leave excavator cab | V |
-| Look around cab | Arrow keys / right mouse drag |
-| Centre cab view | Home |
-| Boom | I / K |
-| Dipper | O / L |
-| Bucket | P / semicolon |
-| Slew | Q / E |
-| Dump captured soil | R |
-| Hook nearby loose object | G |
+| Change machine | Tab |
+| Orbit camera / zoom | Z, C / mouse wheel |
+| Cab or follow view | V (arrows or right-drag to look, Home to centre) |
+| Tractor: travel / steer | W, S / A, D |
+| Excavator arm (dipper) | W, X |
+| Excavator boom | keypad 8, 2 |
+| Excavator bucket | keypad 4, 6 |
+| Slew | A, D |
+| Boom offset | keypad 7, 9 |
+| Left / right track | arrow keys (hold Shift to reverse) |
+| Blade | up / down arrows |
+| Stop tracks | S |
+| Boom and arm, either pattern | I/K and O/L |
+| Release the lifting strap | G |
+| Dump soil / tip the trailer | R / N, B |
+| Drop or re-couple the hitch | H |
+| Reset all machines | F8 |
+| Swap ISO to SAE pattern | F6 |
+| Inspection view / old yard | F2 / F12 |
+
+The excavator ships on the **ISO** pattern.
+
+**Controls — gamepad (PowerA Wired Controller for Nintendo Switch 2)**
+
+| Action | Control |
+| --- | --- |
+| Arm out and in, slew | Left stick |
+| Boom (pull back raises), bucket (push left curls) | Right stick |
+| Each track forward | L / R |
+| That same track in reverse | ZL / ZR |
+| Blade, or tip the trailer on the tractor | D-pad up / down |
+| Boom offset | D-pad left / right |
+| Strap on the digger, hitch on the tractor | A |
+| Change machine / reset | Plus / Minus |
+| Re-bind any of it | F7 |
+
+Soil tips out when you turn the bucket over — there is no dump button on
+the pad.
 
 Drive the excavator forward onto the earth pad and scrape its bucket lip
 through a bank. The bucket must physically enter and move through soil.
