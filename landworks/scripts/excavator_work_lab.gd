@@ -456,35 +456,47 @@ func _drive_tracks(target_left: float, target_right: float) -> void:
             var point_velocity: Vector3 = undercarriage.linear_velocity + undercarriage.angular_velocity.cross(arm)
             var longitudinal_mps := point_velocity.dot(forward)
             var lateral_mps := point_velocity.dot(right)
-            # ALONG the track, ask for the force that brings this patch to the
-            # commanded speed inside one tick, and let the grip budget below
-            # be what limits it. This is the same standing-friction treatment
-            # the sideways direction was given — and the reason it had to be
-            # given here too is that the gate which proved the sideways fix
-            # pushed along basis.x only, so the direction a tractor actually
-            # shoves from was never measured. A gain of 36000 N per m/s is a
-            # dashpot, not friction: it resists a fast slide and almost
-            # nothing slow, so any steady force at all slid the machine at a
-            # steady speed. 10 kN leaning on it moved it 0.538 m in five
-            # seconds where the same force sideways moved it 0.044 m, and a
-            # tractor at 12 km/h shunted 8.4 tonnes 11.7 m.
+            # ALONG the track this is a dashpot, not friction: it resists a
+            # fast slide and almost nothing slow, so any steady force at all
+            # slides the machine at a steady speed. 10 kN leaning on it moves
+            # it 0.538 m in five seconds where the same force SIDEWAYS moves
+            # it 0.044 m, because only the sideways direction was given the
+            # standing-friction treatment — the gate that proved that fix
+            # pushed along basis.x alone, so the direction a tractor actually
+            # shoves from was never measured. THIS IS A KNOWN OPEN FAULT.
             #
-            # The old gain stays as the floor so a commanded crawl is not
-            # slower than it was: below it, grip is doing the work anyway.
-            # The mass share has to be the mass of the body the force is
-            # applied to, not the machine's whole 8.17 tonnes. Using the whole
-            # machine made the four patches together ask for 980 kN per m/s
-            # against a 2200 kg undercarriage — 3.7 times what cancels its
-            # velocity in a tick — so instead of gripping it overshot every
-            # tick and the machine juddered: commanded to drive, it managed
-            # 0.47 m in five seconds. With the undercarriage's own mass the
-            # four patches exactly cancel its slip and nothing overshoots.
-            var patch_mass: float = undercarriage.mass / float(contacts * 2)
-            var slip: float = requested - longitudinal_mps
-            var drive_n := clampf(maxf(
-                absf(slip) * patch_mass * float(Engine.physics_ticks_per_second),
-                absf(slip) * TRACK_SPEED_FEEDBACK_N_PER_MPS / float(contacts)),
-                0.0, per_patch_mu_n) * signf(slip)
+            # It is left here deliberately. Replacing this gain with a
+            # one-tick arrest, the way the sideways term works, was tried four
+            # ways and every one of them broke a field-trial gate that was
+            # green and that encodes real physics:
+            #
+            #  - whole-machine mass share: 980 kN per m/s against a 2200 kg
+            #    undercarriage, 3.7x what cancels its velocity in a tick, so
+            #    it overshot and the machine juddered — commanded to drive it
+            #    managed 0.47 m in five seconds.
+            #  - undercarriage mass share: holds to 0.142 m, but the saturated
+            #    demand takes the patch's whole friction circle and the rescale
+            #    below leaves nothing for the sideways scrub that stops a
+            #    neutral turn translating. lift_pivot_500 drifted past 0.9 m.
+            #  - only when the track is not commanded: pivot recovered, but on
+            #    clay the small grip budget was then used in full from the
+            #    first tick where the slip curve had used part of it, so the
+            #    machine stopped creeping while dragging and the load went
+            #    3.375 m on clay against 3.060 m on hardpack — further on the
+            #    worse surface, because creep shortens the stroke. Clay was
+            #    1.980 m. Adding a 0.10 m/s breakaway did not help: the creep
+            #    that the contrast depends on is below it.
+            #  - only when no service is being worked: the push holds at
+            #    0.145 m and every field trial passes, but playable_dig_regression
+            #    fails with 49.6 mm of pin gap at the curl.
+            #
+            # The clay/hardpack contrast in drag_clay_1000 currently comes
+            # from the machine creeping, so fixing the creep removes the
+            # contrast. Landing this properly means grounding that contrast in
+            # soil resistance first. Do not weaken those gates to get it in.
+            var drive_n := clampf(
+                (requested - longitudinal_mps) * TRACK_SPEED_FEEDBACK_N_PER_MPS / float(contacts),
+                -per_patch_mu_n, per_patch_mu_n)
             # Sideways sliding of a rubber track is resisted, but not welded
             # to the ground. The front/rear patch arms create realistic
             # turning scrub and help damp yaw oscillations.

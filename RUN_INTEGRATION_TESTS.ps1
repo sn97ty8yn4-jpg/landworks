@@ -53,3 +53,13 @@ foreach ($case in $cases.GetEnumerator()) {
     Invoke-CheckedGodot $case.Key @('--script', "res://landworks/scripts/$($case.Key).gd") $case.Value
 }
 Write-Output "All integration checks passed. Logs: $outputDirectory"
+# This suite does NOT include the 13-case field trial battery, and CI gates on
+# it separately (godot-ci.yml, "Enforce measured physical behaviour"). A change
+# to the track, tyre or hydraulic models passed everything here and still broke
+# the pivot and clay cases, so say so rather than letting a green run here be
+# read as a green CI.
+Write-Output ''
+Write-Output 'NOT COVERED HERE: the 13-case field trial battery (pivot drift, clay vs'
+Write-Output 'hardpack, lift stalls, tow hitch). CI gates on it separately. After any'
+Write-Output 'change to the track, tyre or hydraulic models, also run:'
+Write-Output '    tools\windows\RUN_FIELD_TESTS_WINDOWS.bat'
